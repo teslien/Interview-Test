@@ -486,6 +486,311 @@ class InterviewPlatformAPITester:
         )
         return success
 
+    def test_applicant_my_invites(self):
+        """Test applicant getting their invites"""
+        if not self.applicant_token:
+            print("❌ Applicant token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Applicant My Invites",
+            "GET",
+            "my-invites",
+            200,
+            headers={"Authorization": f"Bearer {self.applicant_token}"}
+        )
+        if success:
+            print(f"   Found {len(response)} invites for applicant")
+            return True
+        return False
+
+    def test_start_test_endpoint(self):
+        """Test starting a test via /start-test/{token}"""
+        if not hasattr(self, 'invite_token'):
+            print("❌ Invite token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Start Test Monitoring",
+            "POST",
+            f"start-test/{self.invite_token}",
+            200
+        )
+        if success and response.get('status') == 'in_progress':
+            print(f"   Test started successfully, status: {response.get('status')}")
+            return True
+        return False
+
+    def test_submit_test_endpoint(self):
+        """Test submitting a test with answers"""
+        if not hasattr(self, 'invite_token') or not hasattr(self, 'created_test_id'):
+            print("❌ Invite token or test ID not available, skipping test")
+            return False
+            
+        # First get the test to see the questions
+        test_success, test_response = self.run_test(
+            "Get Test for Submission",
+            "GET",
+            f"tests/{self.created_test_id}",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not test_success:
+            print("❌ Could not get test details for submission")
+            return False
+            
+        # Prepare answers based on the test questions
+        answers = []
+        for question in test_response.get('questions', []):
+            if question['type'] == 'multiple_choice':
+                # Use the correct answer for testing score calculation
+                answers.append({
+                    "question_id": question['id'],
+                    "answer": question.get('correct_answer', question.get('options', [''])[0])
+                })
+            else:
+                # For other question types, provide sample answers
+                answers.append({
+                    "question_id": question['id'],
+                    "answer": "Sample answer for testing"
+                })
+        
+        submission_data = {
+            "answers": answers
+        }
+        
+        success, response = self.run_test(
+            "Submit Test",
+            "POST",
+            f"submit-test/{self.invite_token}",
+            200,
+            data=submission_data
+        )
+        if success and 'score' in response:
+            print(f"   Test submitted successfully, score: {response.get('score')}")
+            return True
+        return False
+
+    def test_invalid_token_start_test(self):
+        """Test starting test with invalid token"""
+        invalid_token = "invalid-token-12345"
+        success, response = self.run_test(
+            "Start Test with Invalid Token",
+            "POST",
+            f"start-test/{invalid_token}",
+            404
+        )
+        return success
+
+    def test_invalid_token_submit_test(self):
+        """Test submitting test with invalid token"""
+        invalid_token = "invalid-token-12345"
+        submission_data = {
+            "answers": [{"question_id": "test-q1", "answer": "test answer"}]
+        }
+        
+        success, response = self.run_test(
+            "Submit Test with Invalid Token",
+            "POST",
+            f"submit-test/{invalid_token}",
+            404,
+            data=submission_data
+        )
+        return success
+
+    def test_malformed_submission_data(self):
+        """Test submitting test with malformed data"""
+        if not hasattr(self, 'invite_token'):
+            print("❌ Invite token not available, skipping test")
+            return False
+            
+        # Test with missing answers field
+        malformed_data = {
+            "invalid_field": "test"
+        }
+        
+        success, response = self.run_test(
+            "Submit Test with Malformed Data",
+            "POST",
+            f"submit-test/{self.invite_token}",
+            422,  # Validation error
+            data=malformed_data
+        )
+        return success
+
+    def test_invitation_status_transitions(self):
+        """Test invitation status transitions through the flow"""
+        if not self.admin_token or not hasattr(self, 'created_test_id'):
+            print("❌ Admin token or test ID not available, skipping test")
+            return False
+            
+        # Create a new invitation for status testing
+        invite_data = {
+            "test_id": self.created_test_id,
+            "applicant_email": "status.test@example.com",
+            "applicant_name": "Status Test User"
+        }
+        
+        success, response = self.run_test(
+            "Create Invitation for Status Testing",
+            "POST",
+            "invites",
+            200,
+            data=invite_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not success or 'invite_token' not in response:
+            print("❌ Could not create invitation for status testing")
+            return False
+            
+        status_test_token = response['invite_token']
+        
+        # Check initial status (should be 'sent')
+        success, response = self.run_test(
+            "Check Initial Invitation Status",
+            "GET",
+            f"invites/token/{status_test_token}",
+            200
+        )
+        
+        if not success or response.get('invite', {}).get('status') != 'sent':
+            print(f"❌ Initial status not 'sent', got: {response.get('invite', {}).get('status')}")
+            return False
+            
+        print("   ✅ Initial status: sent")
+        
+        # Start the test (should change status to 'in_progress')
+        success, response = self.run_test(
+            "Start Test for Status Change",
+            "POST",
+            f"start-test/{status_test_token}",
+            200
+        )
+        
+        if not success:
+            print("❌ Could not start test for status change")
+            return False
+            
+        print("   ✅ Test started, status should be 'in_progress'")
+        
+        # Check status after starting (should be 'in_progress')
+        success, response = self.run_test(
+            "Check In-Progress Status",
+            "GET",
+            f"invites/token/{status_test_token}",
+            200
+        )
+        
+        if success and response.get('invite', {}).get('status') == 'in_progress':
+            print("   ✅ Status changed to 'in_progress'")
+            return True
+        else:
+            print(f"❌ Status not 'in_progress', got: {response.get('invite', {}).get('status')}")
+            return False
+
+    def test_score_calculation_accuracy(self):
+        """Test score calculation for multiple choice questions"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        # Create a test with known correct answers for score verification
+        test_data = {
+            "title": "Score Calculation Test",
+            "description": "Test for verifying score calculation",
+            "duration_minutes": 30,
+            "questions": [
+                {
+                    "type": "multiple_choice",
+                    "question": "What is 5 + 5?",
+                    "options": ["8", "9", "10", "11"],
+                    "correct_answer": "10",
+                    "points": 2
+                },
+                {
+                    "type": "multiple_choice",
+                    "question": "What is the capital of Italy?",
+                    "options": ["Rome", "Milan", "Naples", "Turin"],
+                    "correct_answer": "Rome",
+                    "points": 3
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Create Score Test",
+            "POST",
+            "tests",
+            200,
+            data=test_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not success or 'id' not in response:
+            print("❌ Could not create test for score calculation")
+            return False
+            
+        score_test_id = response['id']
+        
+        # Create invitation for this test
+        invite_data = {
+            "test_id": score_test_id,
+            "applicant_email": "score.test@example.com",
+            "applicant_name": "Score Test User"
+        }
+        
+        success, response = self.run_test(
+            "Create Score Test Invitation",
+            "POST",
+            "invites",
+            200,
+            data=invite_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not success or 'invite_token' not in response:
+            print("❌ Could not create invitation for score test")
+            return False
+            
+        score_token = response['invite_token']
+        
+        # Start the test
+        success, response = self.run_test(
+            "Start Score Test",
+            "POST",
+            f"start-test/{score_token}",
+            200
+        )
+        
+        if not success:
+            print("❌ Could not start score test")
+            return False
+            
+        # Submit with all correct answers (should get 100%)
+        correct_answers = [
+            {"question_id": test_data['questions'][0]['id'], "answer": "10"},
+            {"question_id": test_data['questions'][1]['id'], "answer": "Rome"}
+        ]
+        
+        submission_data = {"answers": correct_answers}
+        
+        success, response = self.run_test(
+            "Submit Score Test with Correct Answers",
+            "POST",
+            f"submit-test/{score_token}",
+            200,
+            data=submission_data
+        )
+        
+        if success and response.get('score') == 100.0:
+            print(f"   ✅ Score calculation correct: {response.get('score')}%")
+            return True
+        else:
+            print(f"❌ Expected 100%, got: {response.get('score')}%")
+            return False
+
 def main():
     print("🚀 Starting Interview Platform API Tests")
     print("=" * 50)
