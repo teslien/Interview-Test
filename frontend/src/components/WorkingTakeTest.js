@@ -205,10 +205,10 @@ const WorkingTakeTest = () => {
           </div>
           
           <h1 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>
-            {test?.title}
+            {test?.title || 'Loading Test...'}
           </h1>
           <p style={{ color: '#6b7280', marginBottom: '24px' }}>
-            {test?.description}
+            {test?.description || 'Loading test description...'}
           </p>
           
           <div style={{ 
@@ -219,9 +219,9 @@ const WorkingTakeTest = () => {
             textAlign: 'left'
           }}>
             <h3 style={{ marginBottom: '12px', fontWeight: '600' }}>Test Information:</h3>
-            <p><strong>Applicant:</strong> {invite?.applicant_name}</p>
-            <p><strong>Duration:</strong> {test?.duration_minutes} minutes</p>
-            <p><strong>Questions:</strong> {test?.questions?.length}</p>
+            <p><strong>Applicant:</strong> {invite?.applicant_name || 'Loading...'}</p>
+            <p><strong>Duration:</strong> {test?.duration_minutes || 0} minutes</p>
+            <p><strong>Questions:</strong> {test?.questions?.length || 0}</p>
           </div>
           
           <div style={{ 
