@@ -269,7 +269,7 @@ const ApplicantDashboard = () => {
                                 style={{ width: `${test.score}%` }}
                               ></div>
                             </div>
-                            <span className="text-sm font-medium">{test.score}%</span>
+                            <span className="text-sm font-medium">{test.score || 0}%</span>
                           </div>
                         </div>
                         <Button 
