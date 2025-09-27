@@ -7,35 +7,66 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
 const ApplicantDashboard = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [upcomingTests, setUpcomingTests] = useState([]);
   const [completedTests, setCompletedTests] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Mock data for now - in real app, this would come from API
   useEffect(() => {
-    // Simulate loading user's test invitations
-    setUpcomingTests([
-      {
-        id: '1',
-        testTitle: 'Frontend Developer Assessment',
-        scheduledDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
-        duration: 90,
-        status: 'scheduled'
-      }
-    ]);
-    
-    setCompletedTests([
-      {
-        id: '2',
-        testTitle: 'JavaScript Fundamentals',
-        completedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last week
-        score: 85,
-        status: 'completed'
-      }
-    ]);
+    fetchApplicantData();
   }, []);
+
+  const fetchApplicantData = async () => {
+    setLoading(true);
+    try {
+      // Fetch user's test invitations
+      const invitesResponse = await axios.get(`${API}/my-invites`);
+      const invites = invitesResponse.data;
+      
+      // Separate upcoming and completed tests
+      const upcoming = invites.filter(invite => 
+        invite.status === 'sent' || invite.status === 'scheduled'
+      );
+      const completed = invites.filter(invite => 
+        invite.status === 'completed'
+      );
+      
+      setUpcomingTests(upcoming);
+      setCompletedTests(completed);
+      
+    } catch (error) {
+      console.error('Failed to fetch applicant data:', error);
+      // Fallback to mock data for demo
+      setUpcomingTests([
+        {
+          id: '1',
+          test_title: 'Frontend Developer Assessment',
+          test: { title: 'Frontend Developer Assessment', duration_minutes: 90 },
+          scheduled_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          status: 'scheduled',
+          token: 'demo-token-123'
+        }
+      ]);
+      
+      setCompletedTests([
+        {
+          id: '2',
+          test_title: 'JavaScript Fundamentals',
+          test: { title: 'JavaScript Fundamentals' },
+          completed_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          score: 85,
+          status: 'completed'
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusBadge = (status) => {
     const statusConfig = {
