@@ -24,9 +24,14 @@ const ApplicantDashboard = () => {
   const fetchApplicantData = async () => {
     setLoading(true);
     try {
+      console.log('Fetching applicant data...');
+      console.log('API URL:', `${API}/my-invites`);
+      
       // Fetch user's test invitations
       const invitesResponse = await axios.get(`${API}/my-invites`);
       const invites = invitesResponse.data;
+      
+      console.log('Invites received:', invites);
       
       // Separate upcoming and completed tests
       const upcoming = invites.filter(invite => 
@@ -36,19 +41,23 @@ const ApplicantDashboard = () => {
         invite.status === 'completed'
       );
       
+      console.log('Upcoming tests:', upcoming);
+      console.log('Completed tests:', completed);
+      
       setUpcomingTests(upcoming);
       setCompletedTests(completed);
       
     } catch (error) {
       console.error('Failed to fetch applicant data:', error);
       console.error('Error details:', error.response?.data);
+      console.error('Error status:', error.response?.status);
       
       // Show empty state instead of mock data
       setUpcomingTests([]);
       setCompletedTests([]);
       
       // Show error message to user
-      alert('Unable to load your test invitations. Please contact support if this issue persists.');
+      alert('Unable to load your test invitations. Error: ' + (error.response?.data?.detail || error.message) + ' Please contact support if this issue persists.');
     } finally {
       setLoading(false);
     }
