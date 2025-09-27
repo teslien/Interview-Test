@@ -133,6 +133,7 @@ function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<SimpleLogin />} />
+            <Route path="/test" element={<TestLogin />} />
             
             {/* Protected Routes */}
             <Route path="/admin" element={
