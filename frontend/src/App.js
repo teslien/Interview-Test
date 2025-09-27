@@ -153,7 +153,7 @@ function App() {
             {/* Public Routes */}
             <Route path="/login" element={<SimpleLoginFixed />} />
             <Route path="/test-invite/:token" element={<TestInvite />} />
-            <Route path="/take-test/:token" element={<TakeTest />} />
+            <Route path="/take-test/:token" element={<WorkingTakeTest />} />
             
             {/* Protected Routes */}
             <Route path="/admin" element={
