@@ -62,7 +62,7 @@ const TestInvite = () => {
         scheduled_date: scheduledDateTime.toISOString()
       });
 
-      toast.success('Test scheduled successfully!');
+      alert('Test scheduled successfully!');
       setStep('confirmed');
       
       // Update invite status
