@@ -201,6 +201,7 @@ const ApplicantDashboard = () => {
                         <Button 
                           className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
                           data-testid={`take-test-${test.id}`}
+                          onClick={() => handleTakeTest(test)}
                         >
                           Take Test
                         </Button>
