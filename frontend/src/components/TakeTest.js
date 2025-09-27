@@ -61,7 +61,7 @@ const TakeTest = () => {
       setTimeLeft(response.data.test.duration_minutes * 60);
     } catch (error) {
       console.error('Failed to fetch test details:', error);
-      toast.error('Unable to load test. Please check your invite link.');
+      alert('Unable to load test. Please check your invite link.');
       navigate('/');
     } finally {
       setLoading(false);
