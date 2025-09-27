@@ -47,7 +47,7 @@ const VideoMonitor = () => {
       // For now, we'll simulate the connection
       setTimeout(() => {
         setConnectionStatus('connected');
-        toast.success('Connected to applicant video feed');
+        alert('Connected to applicant video feed');
       }, 2000);
       
     } catch (error) {
