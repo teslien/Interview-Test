@@ -164,7 +164,7 @@ const ApplicantDashboard = () => {
                   <p className="text-sm font-medium text-gray-600">Average Score</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {completedTests.length > 0 
-                      ? Math.round(completedTests.reduce((acc, test) => acc + test.score, 0) / completedTests.length)
+                      ? Math.round(completedTests.reduce((acc, test) => acc + (test.score || 0), 0) / completedTests.length)
                       : 0}%
                   </p>
                 </div>
