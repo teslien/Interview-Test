@@ -201,11 +201,11 @@ const AdminDashboard = () => {
     if (window.confirm(`Are you sure you want to delete "${testTitle}"? This action cannot be undone.`)) {
       try {
         await axios.delete(`${API}/tests/${testId}`);
-        alert('Test deleted successfully!');
+        toast.success('Test deleted successfully!');
         fetchData();
       } catch (error) {
         console.error('Failed to delete test:', error);
-        alert('Failed to delete test');
+        toast.error('Failed to delete test: ' + (error.response?.data?.detail || error.message));
       }
     }
   };
