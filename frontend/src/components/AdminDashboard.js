@@ -453,11 +453,21 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                     <div className="flex space-x-2 mt-4">
-                      <Button size="sm" variant="outline" className="flex-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => handleEditTest(test)}
+                      >
                         <Edit className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => handleDeleteTest(test.id, test.title)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
