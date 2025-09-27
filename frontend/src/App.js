@@ -59,12 +59,12 @@ const AuthProvider = ({ children }) => {
       setUser(userData);
       
       console.log('User set to:', userData);
-      toast.success('Login successful!');
+      alert('Login successful!');
       return userData;
     } catch (error) {
       console.error('Login error:', error);
       const message = error.response?.data?.detail || 'Login failed';
-      toast.error(message);
+      alert('Login failed: ' + message);
       throw error;
     }
   };
