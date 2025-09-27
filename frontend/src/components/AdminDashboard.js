@@ -155,19 +155,19 @@ const AdminDashboard = () => {
 
   const handleSendInvite = async () => {
     if (!newInvite.test_id || !newInvite.applicant_email || !newInvite.applicant_name) {
-      alert('Please fill in all fields');
+      toast.error('Please fill in all fields');
       return;
     }
     
     try {
       await axios.post(`${API}/invites`, newInvite);
-      alert('Invite sent successfully!');
+      toast.success('Invite sent successfully!');
       setShowSendInvite(false);
       setNewInvite({ test_id: '', applicant_email: '', applicant_name: '' });
       fetchData();
     } catch (error) {
       console.error('Failed to send invite:', error);
-      alert('Failed to send invite');
+      toast.error('Failed to send invite: ' + (error.response?.data?.detail || error.message));
     }
   };
 
