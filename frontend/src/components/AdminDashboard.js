@@ -840,6 +840,111 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Test Modal */}
+      {showEditTest && editingTest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold">Edit Test</h2>
+              <button
+                onClick={() => {
+                  setShowEditTest(false);
+                  setEditingTest(null);
+                }}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <Label htmlFor="edit-test-title">Test Title</Label>
+                <Input
+                  id="edit-test-title"
+                  value={editingTest.title}
+                  onChange={(e) => setEditingTest({ ...editingTest, title: e.target.value })}
+                  placeholder="Enter test title"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="edit-test-description">Description</Label>
+                <Textarea
+                  id="edit-test-description"
+                  value={editingTest.description}
+                  onChange={(e) => setEditingTest({ ...editingTest, description: e.target.value })}
+                  placeholder="Enter test description"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="edit-test-duration">Duration (minutes)</Label>
+                <Input
+                  id="edit-test-duration"
+                  type="number"
+                  value={editingTest.duration_minutes}
+                  onChange={(e) => setEditingTest({ ...editingTest, duration_minutes: parseInt(e.target.value) })}
+                  min="1"
+                />
+              </div>
+              
+              {/* Questions List */}
+              <div>
+                <Label>Questions ({editingTest.questions.length})</Label>
+                <div className="space-y-2 mt-2">
+                  {editingTest.questions.map((q, index) => (
+                    <div key={index} className="bg-gray-50 p-3 rounded-lg flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">{q.question}</p>
+                        <p className="text-sm text-gray-600 capitalize">
+                          {q.type.replace('_', ' ')} • {q.points} points
+                        </p>
+                        {q.type === 'multiple_choice' && q.options && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            Options: {q.options.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const updatedQuestions = editingTest.questions.filter((_, i) => i !== index);
+                          setEditingTest({ ...editingTest, questions: updatedQuestions });
+                        }}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t flex space-x-3">
+              <Button
+                onClick={() => {
+                  setShowEditTest(false);
+                  setEditingTest(null);
+                }}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTest}
+                className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+              >
+                Update Test
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
