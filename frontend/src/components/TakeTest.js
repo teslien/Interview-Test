@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Clock, Camera, Mic, AlertTriangle, Send, Code } from 'lucide-react';
-import { toast } from 'sonner';
+// Removed toast import
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
