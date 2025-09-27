@@ -404,8 +404,18 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         "score": calculated_score
     })
     
-    submission_obj = TestSubmission(**submission_dict)
-    await db.submissions.insert_one(submission_obj.dict())
+    # Create clean submission data without ObjectIds
+    submission_data = {
+        "id": str(uuid.uuid4()),
+        "invite_id": invite["id"],
+        "test_id": invite["test_id"],
+        "applicant_email": invite["applicant_email"],
+        "submitted_at": datetime.now(timezone.utc),
+        "score": calculated_score,
+        "answers": [{"question_id": ans.question_id, "answer": ans.answer} for ans in submission.answers]
+    }
+    
+    await db.submissions.insert_one(submission_data)
     
     # Update invite status
     await db.invites.update_one(
