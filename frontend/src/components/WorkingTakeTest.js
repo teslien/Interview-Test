@@ -258,7 +258,7 @@ const WorkingTakeTest = () => {
     );
   }
 
-  const currentQuestion = test?.questions[currentQuestionIndex];
+  const currentQuestion = test?.questions?.[currentQuestionIndex];
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc' }}>
