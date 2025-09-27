@@ -166,7 +166,6 @@ function App() {
             <Route path="/" element={<DefaultRoute />} />
           </Routes>
         </BrowserRouter>
-        <Toaster position="top-right" richColors />
       </AuthProvider>
     </div>
   );
