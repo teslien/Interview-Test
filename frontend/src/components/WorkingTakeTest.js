@@ -47,16 +47,21 @@ const WorkingTakeTest = () => {
   const fetchTestDetails = async () => {
     try {
       console.log('Fetching test details for token:', token);
+      console.log('API URL:', `${API}/take-test/${token}`);
       const response = await axios.get(`${API}/take-test/${token}`);
       console.log('Test details response:', response.data);
       
       setInvite(response.data.invite);
       setTest(response.data.test);
       setTimeLeft(response.data.test.duration_minutes * 60);
+      console.log('Test loaded successfully');
     } catch (error) {
       console.error('Failed to fetch test details:', error);
-      alert('Unable to load test. Error: ' + (error.response?.data?.detail || error.message));
-      navigate('/');
+      console.error('Error response:', error.response);
+      console.error('Error message:', error.message);
+      alert('DEBUG - Unable to load test. Error: ' + (error.response?.data?.detail || error.message) + ' Status: ' + (error.response?.status || 'no status'));
+      // Don't navigate for now, stay on page for debugging
+      // navigate('/');
     } finally {
       setLoading(false);
     }
