@@ -821,6 +821,15 @@ def main():
         ("Invalid Test Creation", tester.test_invalid_test_creation),
         ("Get Test Results", tester.test_get_results),
         ("Applicant Cannot Access Results", tester.test_applicant_cannot_access_results),
+        # NEW CRITICAL TESTS FOR SUBMISSION FLOW
+        ("Applicant My Invites", tester.test_applicant_my_invites),
+        ("Start Test Endpoint", tester.test_start_test_endpoint),
+        ("Submit Test Endpoint", tester.test_submit_test_endpoint),
+        ("Invalid Token Start Test", tester.test_invalid_token_start_test),
+        ("Invalid Token Submit Test", tester.test_invalid_token_submit_test),
+        ("Malformed Submission Data", tester.test_malformed_submission_data),
+        ("Invitation Status Transitions", tester.test_invitation_status_transitions),
+        ("Score Calculation Accuracy", tester.test_score_calculation_accuracy),
     ]
     
     # Run all tests
