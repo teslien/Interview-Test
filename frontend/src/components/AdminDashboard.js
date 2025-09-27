@@ -181,19 +181,19 @@ const AdminDashboard = () => {
 
   const handleUpdateTest = async () => {
     if (!editingTest.title || !editingTest.description || editingTest.questions.length === 0) {
-      alert('Please fill in all required fields and add at least one question');
+      toast.error('Please fill in all required fields and add at least one question');
       return;
     }
     
     try {
       await axios.put(`${API}/tests/${editingTest.id}`, editingTest);
-      alert('Test updated successfully!');
+      toast.success('Test updated successfully!');
       setShowEditTest(false);
       setEditingTest(null);
       fetchData();
     } catch (error) {
       console.error('Failed to update test:', error);
-      alert('Failed to update test');
+      toast.error('Failed to update test: ' + (error.response?.data?.detail || error.message));
     }
   };
 
