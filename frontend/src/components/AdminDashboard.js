@@ -50,6 +50,10 @@ const AdminDashboard = () => {
     applicant_name: ''
   });
 
+  // Edit test state
+  const [showEditTest, setShowEditTest] = useState(false);
+  const [editingTest, setEditingTest] = useState(null);
+
   useEffect(() => {
     fetchData();
   }, []);
