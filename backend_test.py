@@ -697,12 +697,17 @@ class InterviewPlatformAPITester:
             return False
             
         # Create a test with known correct answers for score verification
+        import uuid
+        q1_id = str(uuid.uuid4())
+        q2_id = str(uuid.uuid4())
+        
         test_data = {
             "title": "Score Calculation Test",
             "description": "Test for verifying score calculation",
             "duration_minutes": 30,
             "questions": [
                 {
+                    "id": q1_id,
                     "type": "multiple_choice",
                     "question": "What is 5 + 5?",
                     "options": ["8", "9", "10", "11"],
@@ -710,6 +715,7 @@ class InterviewPlatformAPITester:
                     "points": 2
                 },
                 {
+                    "id": q2_id,
                     "type": "multiple_choice",
                     "question": "What is the capital of Italy?",
                     "options": ["Rome", "Milan", "Naples", "Turin"],
