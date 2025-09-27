@@ -245,7 +245,7 @@ const ApplicantDashboard = () => {
                   <Card key={test.id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover">
                     <CardHeader>
                       <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{test.testTitle}</CardTitle>
+                        <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
                         {getStatusBadge(test.status)}
                       </div>
                     </CardHeader>
