@@ -122,7 +122,7 @@ const TakeTest = () => {
       navigate('/login');
     } catch (error) {
       console.error('Failed to submit test:', error);
-      toast.error('Failed to submit test');
+      alert('Failed to submit test');
     } finally {
       setSubmitting(false);
     }
