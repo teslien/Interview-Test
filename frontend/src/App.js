@@ -75,20 +75,8 @@ const AuthProvider = ({ children }) => {
   };
 
   const register = async (email, password, fullName, role = 'applicant') => {
-    try {
-      await axios.post(`${API}/auth/register`, {
-        email,
-        password,
-        full_name: fullName,
-        role
-      });
-      
-      toast.success('Registration successful! Please login.');
-    } catch (error) {
-      const message = error.response?.data?.detail || 'Registration failed';
-      toast.error(message);
-      throw error;
-    }
+    // Simplified for now
+    alert('Registration functionality will be implemented');
   };
 
   const logout = () => {
