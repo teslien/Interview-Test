@@ -81,19 +81,20 @@ const AdminDashboard = () => {
 
   const handleCreateTest = async () => {
     if (!newTest.title || !newTest.description || newTest.questions.length === 0) {
-      alert('Please fill in all required fields and add at least one question');
+      toast.error('Please fill in all required fields and add at least one question');
       return;
     }
     
     try {
-      await axios.post(`${API}/tests`, newTest);
-      alert('Test created successfully!');
+      const response = await axios.post(`${API}/tests`, newTest);
+      console.log('Test created:', response.data);
+      toast.success('Test created successfully!');
       setShowCreateTest(false);
       setNewTest({ title: '', description: '', duration_minutes: 60, questions: [] });
       fetchData();
     } catch (error) {
       console.error('Failed to create test:', error);
-      alert('Failed to create test');
+      toast.error('Failed to create test: ' + (error.response?.data?.detail || error.message));
     }
   };
 
