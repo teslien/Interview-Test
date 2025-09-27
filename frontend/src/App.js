@@ -2,13 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 
-// Components
-import LoginPage from './components/LoginPage';
-import AdminDashboard from './components/AdminDashboard';
-import ApplicantDashboard from './components/ApplicantDashboard';
-import TestInvite from './components/TestInvite';
-import TakeTest from './components/TakeTest';
-import VideoMonitor from './components/VideoMonitor';
+// Components\nimport SimpleLoginFixed from './components/SimpleLoginFixed';\nimport AdminDashboard from './components/AdminDashboard';\nimport ApplicantDashboard from './components/ApplicantDashboard';\nimport TestInvite from './components/TestInvite';\nimport TakeTest from './components/TakeTest';\nimport VideoMonitor from './components/VideoMonitor';
 
 import './App.css';
 
