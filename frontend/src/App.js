@@ -8,6 +8,7 @@ import AdminDashboard from './components/AdminDashboard';
 import ApplicantDashboard from './components/ApplicantDashboard';
 import TestInvite from './components/TestInvite';
 import TakeTest from './components/TakeTest';
+import DebugTakeTest from './components/DebugTakeTest';
 import VideoMonitor from './components/VideoMonitor';
 
 import './App.css';
