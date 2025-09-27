@@ -41,28 +41,14 @@ const ApplicantDashboard = () => {
       
     } catch (error) {
       console.error('Failed to fetch applicant data:', error);
-      // Fallback to mock data for demo
-      setUpcomingTests([
-        {
-          id: '1',
-          test_title: 'Sample Frontend Test',
-          test: { title: 'Sample Frontend Test', duration_minutes: 90 },
-          scheduled_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          status: 'scheduled',
-          token: '1dfc7c3d-b2ed-41c9-aa24-a87785fc3412'
-        }
-      ]);
+      console.error('Error details:', error.response?.data);
       
-      setCompletedTests([
-        {
-          id: '2',
-          test_title: 'JavaScript Fundamentals',
-          test: { title: 'JavaScript Fundamentals' },
-          completed_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          score: 85,
-          status: 'completed'
-        }
-      ]);
+      // Show empty state instead of mock data
+      setUpcomingTests([]);
+      setCompletedTests([]);
+      
+      // Show error message to user
+      alert('Unable to load your test invitations. Please contact support if this issue persists.');
     } finally {
       setLoading(false);
     }
