@@ -253,7 +253,12 @@ const ApplicantDashboard = () => {
                       <div className="space-y-3">
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                           <Calendar className="h-4 w-4" />
-                          <span>Completed: {test.completedDate.toLocaleDateString()}</span>
+                          <span>
+                            Completed: {test.completed_date 
+                              ? new Date(test.completed_date).toLocaleDateString()
+                              : 'N/A'
+                            }
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600">Score:</span>
