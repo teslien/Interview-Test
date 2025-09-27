@@ -298,6 +298,241 @@ const WorkingTakeTest = () => {
       <div style={{ display: 'flex', maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
         {/* Main Content */}
         <div style={{ flex: 1, marginRight: '24px' }}>
+          {!currentQuestion ? (
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '32px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+              textAlign: 'center'
+            }}>
+              <p>Loading test questions...</p>
+            </div>
+          ) : (
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '32px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)'
+          }}>
+            <div style={{ marginBottom: '24px' }}>
+              <span style={{
+                background: '#6366f1',
+                color: 'white',
+                padding: '4px 12px',
+                borderRadius: '16px',
+                fontSize: '12px',
+                fontWeight: '600'
+              }}>
+                {currentQuestion?.type?.replace('_', ' ').toUpperCase()}
+              </span>
+              <span style={{ 
+                marginLeft: '12px', 
+                color: '#6b7280', 
+                fontSize: '14px' 
+              }}>
+                {currentQuestion?.points} point{currentQuestion?.points !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <h2 style={{ 
+              fontSize: '24px', 
+              fontWeight: '600', 
+              marginBottom: '24px',
+              lineHeight: '1.4'
+            }}>
+              {currentQuestion?.question}
+            </h2>
+
+            {/* Multiple Choice */}
+            {currentQuestion?.type === 'multiple_choice' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {currentQuestion.options?.map((option, index) => (
+                  <label 
+                    key={index} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '16px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      backgroundColor: answers[currentQuestion.id] === option ? '#eff6ff' : 'white',
+                      borderColor: answers[currentQuestion.id] === option ? '#3b82f6' : '#e5e7eb'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name={`question-${currentQuestion.id}`}
+                      value={option}
+                      checked={answers[currentQuestion.id] === option}
+                      onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
+                      style={{ marginRight: '12px' }}
+                    />
+                    <span>{option}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Essay */}
+            {currentQuestion?.type === 'essay' && (
+              <textarea
+                value={answers[currentQuestion.id] || ''}
+                onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
+                placeholder="Type your answer here..."
+                style={{
+                  width: '100%',
+                  minHeight: '200px',
+                  padding: '16px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            )}
+
+            {/* Coding */}
+            {currentQuestion?.type === 'coding' && (
+              <div>
+                <p style={{ 
+                  color: '#6b7280', 
+                  marginBottom: '12px', 
+                  fontSize: '14px' 
+                }}>
+                  Expected Language: {currentQuestion.expected_language}
+                </p>
+                <textarea
+                  value={answers[currentQuestion.id] || ''}
+                  onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
+                  placeholder="Write your code here..."
+                  style={{
+                    width: '100%',
+                    minHeight: '300px',
+                    padding: '16px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+                    resize: 'vertical',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              marginTop: '32px' 
+            }}>
+              <button
+                onClick={handlePreviousQuestion}
+                disabled={currentQuestionIndex === 0}
+                style={{
+                  padding: '12px 24px',
+                  border: '2px solid #e5e7eb',
+                  background: 'white',
+                  borderRadius: '8px',
+                  cursor: currentQuestionIndex === 0 ? 'not-allowed' : 'pointer',
+                  opacity: currentQuestionIndex === 0 ? 0.5 : 1
+                }}
+              >
+                ← Previous
+              </button>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {currentQuestionIndex < (test?.questions?.length || 0) - 1 ? (
+                  <button
+                    onClick={handleNextQuestion}
+                    style={{
+                      padding: '12px 24px',
+                      background: '#6366f1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Next →
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSubmitTest}
+                    style={{
+                      padding: '12px 24px',
+                      background: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Submit Test
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          )}
+        </div>
+
+        {/* Video Monitor */}
+        <div style={{ width: '300px', flexShrink: 0 }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)'
+          }}>
+            <h3 style={{ 
+              fontSize: '16px', 
+              fontWeight: '600', 
+              marginBottom: '12px' 
+            }}>
+              Video Monitoring
+            </h3>
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              style={{
+                width: '100%',
+                height: '200px',
+                borderRadius: '8px',
+                background: '#000',
+                objectFit: 'cover'
+              }}
+            />
+            <p style={{ 
+              fontSize: '12px', 
+              color: '#6b7280', 
+              marginTop: '8px',
+              textAlign: 'center'
+            }}>
+              🔴 Recording for verification
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WorkingTakeTest;
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+        {/* Main Content */}
+        <div style={{ flex: 1, marginRight: '24px' }}>
           <div style={{
             background: 'white',
             borderRadius: '12px',
