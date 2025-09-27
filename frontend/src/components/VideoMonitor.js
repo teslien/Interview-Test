@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Video, VideoOff, Mic, MicOff, Monitor, User, Clock, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
+// Removed toast import
 
 const VideoMonitor = () => {
   const { inviteId } = useParams();
