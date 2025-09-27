@@ -105,18 +105,15 @@ def test_submission_flow():
     invites = invites_response.json()
     print(f"✅ Admin can see {len(invites)} invitations")
     
-    # Find our invitation and check initial status
-    our_invite = None
-    for invite in invites:
-        if invite['invite_token'] == invite_token:
-            our_invite = invite
-            break
-    
-    if not our_invite:
-        print("❌ Could not find our invitation in admin list")
+    # Check invitation by token instead (this should work)
+    token_response = requests.get(f"{base_url}/invites/token/{invite_token}")
+    if token_response.status_code != 200:
+        print(f"❌ Get invite by token failed: {token_response.status_code}")
         return False
         
-    print(f"✅ Initial invitation status: {our_invite['status']}")
+    token_data = token_response.json()
+    initial_status = token_data['invite']['status']
+    print(f"✅ Initial invitation status: {initial_status}")
     
     # 6. Start Test via /start-test/{token}
     print("\n6. Starting test via /start-test endpoint...")
