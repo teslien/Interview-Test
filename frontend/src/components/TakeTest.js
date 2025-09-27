@@ -90,7 +90,7 @@ const TakeTest = () => {
     const videoStarted = await startVideo();
     if (videoStarted) {
       setTestStarted(true);
-      toast.success('Test started! You are being monitored.');
+      alert('Test started! You are being monitored.');
     }
   };
 
