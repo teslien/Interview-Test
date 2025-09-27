@@ -1,16 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { Toaster } from './components/ui/sonner';
-import { toast } from 'sonner';
-
-// Components
-import LoginPage from './components/LoginPage';
-import AdminDashboard from './components/AdminDashboard';
-import ApplicantDashboard from './components/ApplicantDashboard';
-import TestInvite from './components/TestInvite';
-import TakeTest from './components/TakeTest';
-import VideoMonitor from './components/VideoMonitor';
 
 import './App.css';
 
