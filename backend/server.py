@@ -308,15 +308,16 @@ async def schedule_test(token: str, schedule_data: ScheduleTest):
 # Test Taking Routes
 @api_router.get("/take-test/{token}")
 async def start_test(token: str):
-    invite = await db.invites.find_one({"invite_token": token, "status": "scheduled"})
+    invite = await db.invites.find_one({"invite_token": token, "status": {"$in": ["sent", "scheduled"]}})
     if not invite:
-        raise HTTPException(status_code=404, detail="Invalid or unscheduled test")
+        raise HTTPException(status_code=404, detail="Invalid or expired test invite")
     
-    # Check if it's the scheduled time (within 30 minutes window)
-    now = datetime.now(timezone.utc)
-    scheduled_time = invite["scheduled_date"]
-    if scheduled_time > now + timedelta(minutes=30) or scheduled_time < now - timedelta(minutes=30):
-        raise HTTPException(status_code=400, detail="Test can only be taken within 30 minutes of scheduled time")
+    # Check if it's the scheduled time (within 30 minutes window) - only for scheduled tests
+    if invite.get("scheduled_date"):
+        now = datetime.now(timezone.utc)
+        scheduled_time = invite["scheduled_date"]
+        if scheduled_time > now + timedelta(minutes=30) or scheduled_time < now - timedelta(minutes=30):
+            raise HTTPException(status_code=400, detail="Test can only be taken within 30 minutes of scheduled time")
     
     test = await db.tests.find_one({"id": invite["test_id"]})
     if not test:
