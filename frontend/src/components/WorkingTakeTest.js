@@ -84,16 +84,29 @@ const WorkingTakeTest = () => {
 
   const handleStartTest = async () => {
     const videoStarted = await startVideo();
+    let canProceed = false;
+    
     if (videoStarted) {
-      setTestStarted(true);
+      canProceed = true;
       toast.success('Test started! You are being monitored via video.');
     } else {
       const proceedWithoutVideo = window.confirm(
         'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?'
       );
       if (proceedWithoutVideo) {
-        setTestStarted(true);
+        canProceed = true;
         toast.info('Test started without video monitoring (testing mode).');
+      }
+    }
+    
+    if (canProceed) {
+      try {
+        // Mark test as started in the backend
+        await axios.post(`${API}/start-test/${token}`);
+        setTestStarted(true);
+      } catch (error) {
+        console.error('Failed to start test:', error);
+        toast.error('Failed to start test monitoring');
       }
     }
   };
