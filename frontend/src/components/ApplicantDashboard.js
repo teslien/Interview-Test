@@ -45,11 +45,11 @@ const ApplicantDashboard = () => {
       setUpcomingTests([
         {
           id: '1',
-          test_title: 'Frontend Developer Assessment',
-          test: { title: 'Frontend Developer Assessment', duration_minutes: 90 },
+          test_title: 'Sample Frontend Test',
+          test: { title: 'Sample Frontend Test', duration_minutes: 90 },
           scheduled_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           status: 'scheduled',
-          token: 'demo-token-123'
+          token: 'a76fc4d4-b87e-4681-be24-402f42fad68c'
         }
       ]);
       
