@@ -385,7 +385,7 @@ const AdminDashboard = () => {
                   </Button>
                   
                   <Button
-                    onClick={() => alert('Live monitoring will be available when tests are in progress')}
+                    onClick={() => window.open('/monitoring', '_blank')}
                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white h-20 flex flex-col items-center justify-center space-y-2"
                     data-testid="monitor-tests-button"
                   >
