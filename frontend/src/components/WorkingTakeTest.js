@@ -90,6 +90,15 @@ const WorkingTakeTest = () => {
     if (videoStarted) {
       setTestStarted(true);
       alert('Test started! You are being monitored via video.');
+    } else {
+      // Allow test to proceed even without video for testing purposes
+      const proceedWithoutVideo = window.confirm(
+        'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?'
+      );
+      if (proceedWithoutVideo) {
+        setTestStarted(true);
+        alert('Test started without video monitoring (testing mode).');
+      }
     }
   };
 
