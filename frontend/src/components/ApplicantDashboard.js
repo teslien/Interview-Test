@@ -30,7 +30,7 @@ const ApplicantDashboard = () => {
       
       // Separate upcoming and completed tests
       const upcoming = invites.filter(invite => 
-        invite.status === 'sent' || invite.status === 'scheduled'
+        invite.status === 'sent' || invite.status === 'scheduled' || invite.status === 'in_progress'
       );
       const completed = invites.filter(invite => 
         invite.status === 'completed'
