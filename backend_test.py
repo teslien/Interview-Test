@@ -776,8 +776,8 @@ class InterviewPlatformAPITester:
             
         # Submit with all correct answers (should get 100%)
         correct_answers = [
-            {"question_id": test_data['questions'][0]['id'], "answer": "10"},
-            {"question_id": test_data['questions'][1]['id'], "answer": "Rome"}
+            {"question_id": q1_id, "answer": "10"},
+            {"question_id": q2_id, "answer": "Rome"}
         ]
         
         submission_data = {"answers": correct_answers}
