@@ -230,6 +230,262 @@ class InterviewPlatformAPITester:
         )
         return success
 
+    def test_create_test_multiple_choice(self):
+        """Test creating a test with multiple choice questions"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        test_data = {
+            "title": "Sample Multiple Choice Test",
+            "description": "A test with multiple choice questions",
+            "duration_minutes": 30,
+            "questions": [
+                {
+                    "type": "multiple_choice",
+                    "question": "What is 2 + 2?",
+                    "options": ["3", "4", "5", "6"],
+                    "correct_answer": "4",
+                    "points": 1
+                },
+                {
+                    "type": "multiple_choice", 
+                    "question": "What is the capital of France?",
+                    "options": ["London", "Berlin", "Paris", "Madrid"],
+                    "correct_answer": "Paris",
+                    "points": 2
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Create Multiple Choice Test",
+            "POST",
+            "tests",
+            200,
+            data=test_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        if success and 'id' in response:
+            self.created_test_id = response['id']
+            print(f"   Created test ID: {self.created_test_id}")
+            return True
+        return False
+
+    def test_create_test_coding(self):
+        """Test creating a test with coding questions"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        test_data = {
+            "title": "Python Coding Test",
+            "description": "A test with coding questions",
+            "duration_minutes": 60,
+            "questions": [
+                {
+                    "type": "coding",
+                    "question": "Write a function to reverse a string",
+                    "expected_language": "python",
+                    "points": 5
+                },
+                {
+                    "type": "essay",
+                    "question": "Explain the difference between list and tuple in Python",
+                    "points": 3
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Create Coding Test",
+            "POST",
+            "tests",
+            200,
+            data=test_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        return success
+
+    def test_get_specific_test(self):
+        """Test getting a specific test by ID"""
+        if not self.admin_token or not hasattr(self, 'created_test_id'):
+            print("❌ Admin token or test ID not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Get Specific Test",
+            "GET",
+            f"tests/{self.created_test_id}",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        if success and response.get('id') == self.created_test_id:
+            print(f"   Retrieved test: {response.get('title')}")
+            return True
+        return False
+
+    def test_create_test_invitation(self):
+        """Test creating a test invitation"""
+        if not self.admin_token or not hasattr(self, 'created_test_id'):
+            print("❌ Admin token or test ID not available, skipping test")
+            return False
+            
+        invite_data = {
+            "test_id": self.created_test_id,
+            "applicant_email": "john.doe@example.com",
+            "applicant_name": "John Doe"
+        }
+        
+        success, response = self.run_test(
+            "Create Test Invitation",
+            "POST",
+            "invites",
+            200,
+            data=invite_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        if success and 'invite_token' in response:
+            self.invite_token = response['invite_token']
+            print(f"   Created invite token: {self.invite_token[:20]}...")
+            return True
+        return False
+
+    def test_get_invitations(self):
+        """Test getting all invitations for admin"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Get Invitations",
+            "GET",
+            "invites",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        if success:
+            print(f"   Found {len(response)} invitations")
+            return True
+        return False
+
+    def test_get_invite_by_token(self):
+        """Test getting invitation details by token"""
+        if not hasattr(self, 'invite_token'):
+            print("❌ Invite token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Get Invite by Token",
+            "GET",
+            f"invites/token/{self.invite_token}",
+            200
+        )
+        if success and 'invite' in response and 'test' in response:
+            print(f"   Retrieved invite for: {response['invite'].get('applicant_name')}")
+            return True
+        return False
+
+    def test_applicant_cannot_create_test(self):
+        """Test that applicant cannot create tests"""
+        if not self.applicant_token:
+            print("❌ Applicant token not available, skipping test")
+            return False
+            
+        test_data = {
+            "title": "Unauthorized Test",
+            "description": "This should fail",
+            "duration_minutes": 30,
+            "questions": []
+        }
+        
+        success, response = self.run_test(
+            "Applicant Cannot Create Test",
+            "POST",
+            "tests",
+            403,
+            data=test_data,
+            headers={"Authorization": f"Bearer {self.applicant_token}"}
+        )
+        return success
+
+    def test_applicant_cannot_create_invite(self):
+        """Test that applicant cannot create invitations"""
+        if not self.applicant_token:
+            print("❌ Applicant token not available, skipping test")
+            return False
+            
+        invite_data = {
+            "test_id": "some-test-id",
+            "applicant_email": "test@example.com",
+            "applicant_name": "Test User"
+        }
+        
+        success, response = self.run_test(
+            "Applicant Cannot Create Invite",
+            "POST",
+            "invites",
+            403,
+            data=invite_data,
+            headers={"Authorization": f"Bearer {self.applicant_token}"}
+        )
+        return success
+
+    def test_invalid_test_creation(self):
+        """Test creating test with invalid data"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        # Missing required fields
+        invalid_test_data = {
+            "title": "Invalid Test"
+            # Missing description, duration_minutes, questions
+        }
+        
+        success, response = self.run_test(
+            "Invalid Test Creation",
+            "POST",
+            "tests",
+            422,  # Validation error
+            data=invalid_test_data,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        return success
+
+    def test_get_results(self):
+        """Test getting test results (admin only)"""
+        if not self.admin_token:
+            print("❌ Admin token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Get Test Results",
+            "GET",
+            "results",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        if success:
+            print(f"   Found {len(response)} test results")
+            return True
+        return False
+
+    def test_applicant_cannot_access_results(self):
+        """Test that applicant cannot access results"""
+        if not self.applicant_token:
+            print("❌ Applicant token not available, skipping test")
+            return False
+            
+        success, response = self.run_test(
+            "Applicant Cannot Access Results",
+            "GET",
+            "results",
+            403,
+            headers={"Authorization": f"Bearer {self.applicant_token}"}
+        )
+        return success
+
 def main():
     print("🚀 Starting Interview Platform API Tests")
     print("=" * 50)
