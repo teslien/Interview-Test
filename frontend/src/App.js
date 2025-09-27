@@ -6,6 +6,7 @@ import axios from 'axios';
 import SimpleLogin from './SimpleLogin';
 import SimpleAdmin from './SimpleAdmin';
 import SimpleApplicant from './SimpleApplicant';
+import TestLogin from './TestLogin';
 
 import './App.css';
 
