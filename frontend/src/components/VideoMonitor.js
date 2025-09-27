@@ -52,7 +52,7 @@ const VideoMonitor = () => {
       
     } catch (error) {
       console.error('Failed to initialize video call:', error);
-      toast.error('Failed to access camera/microphone');
+      alert('Failed to access camera/microphone');
       setConnectionStatus('failed');
     }
   };
