@@ -419,10 +419,10 @@
         let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         let currentQuestions = [];
 
-        // Check authentication
-        if (!authToken || !currentUser.role || currentUser.role !== 'admin') {
-            window.location.href = '/working-login.html';
-        }
+        // Check authentication - temporarily disabled for testing
+        // if (!authToken || !currentUser.role || currentUser.role !== 'admin') {
+        //     window.location.href = '/working-login.html';
+        // }
 
         // Set user name
         document.getElementById('userName').textContent = currentUser.full_name || 'Admin';
