@@ -68,8 +68,18 @@ const ApplicantDashboard = () => {
     }
   };
 
+  const handleTakeTest = (test) => {
+    if (test.token) {
+      // Navigate to test taking page with token
+      navigate(`/take-test/${test.token}`);
+    } else {
+      alert('Test token not available. Please contact administrator.');
+    }
+  };
+
   const getStatusBadge = (status) => {
     const statusConfig = {
+      sent: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
       scheduled: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
       in_progress: { color: 'bg-orange-100 text-orange-800', label: 'In Progress', icon: Clock },
       completed: { color: 'bg-green-100 text-green-800', label: 'Completed', icon: CheckCircle },
