@@ -73,7 +73,7 @@ const TestInvite = () => {
       }));
     } catch (error) {
       console.error('Failed to schedule test:', error);
-      toast.error('Failed to schedule test');
+      alert('Failed to schedule test');
     } finally {
       setScheduling(false);
     }
