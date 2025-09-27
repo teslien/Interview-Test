@@ -40,7 +40,7 @@ const TestInvite = () => {
       }
     } catch (error) {
       console.error('Failed to fetch invite details:', error);
-      toast.error('Invalid or expired invite link');
+      alert('Invalid or expired invite link');
     } finally {
       setLoading(false);
     }
