@@ -171,6 +171,18 @@ backend:
           agent: "testing"
           comment: "Dashboard APIs working: Admin can access test results (/results endpoint), proper role-based access control implemented. Results retrieval working correctly with proper authorization checks."
 
+  - task: "Test Submission and Monitoring Flow"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "CRITICAL FLOW FULLY FUNCTIONAL: Complete test submission and admin monitoring flow working perfectly. ✅ Fresh invitation creation working. ✅ /start-test/{token} endpoint working - properly updates status to 'in_progress'. ✅ /submit-test/{token} endpoint working - accepts proper answer format, calculates scores accurately (100% for correct answers), updates status to 'completed'. ✅ Status transitions working: sent → in_progress → completed. ✅ Admin monitoring: /results endpoint shows 5 results, /invites endpoint functional. ✅ Data integrity: Submissions stored correctly, ObjectId serialization fixed. ✅ Error handling: 404 for invalid tokens, 422 for malformed data. ✅ Score calculation accurate for multiple choice questions. ✅ Applicant /my-invites endpoint working (3 invitations visible). All recent fixes applied successfully."
+
 frontend:
   - task: "React Login Component"
     implemented: true
