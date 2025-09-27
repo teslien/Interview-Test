@@ -11,6 +11,7 @@ import TestInvite from './components/TestInvite';
 import WorkingTakeTest from './components/WorkingTakeTest';
 import DebugTakeTest from './components/DebugTakeTest';
 import VideoMonitor from './components/VideoMonitor';
+import TestMonitoring from './components/TestMonitoring';
 
 import './App.css';
 
