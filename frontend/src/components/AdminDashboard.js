@@ -758,7 +758,7 @@ const AdminDashboard = () => {
                   <Button 
                     onClick={addQuestion} 
                     className="w-full"
-                    style={{ position: 'relative', zIndex: 1000 }}
+                    type="button"
                   >
                     Add Question
                   </Button>
