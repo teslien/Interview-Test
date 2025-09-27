@@ -410,6 +410,7 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         "invite_id": invite["id"],
         "test_id": invite["test_id"],
         "applicant_email": invite["applicant_email"],
+        "started_at": invite.get("started_at", datetime.now(timezone.utc)),
         "submitted_at": datetime.now(timezone.utc),
         "score": calculated_score,
         "answers": [{"question_id": ans.question_id, "answer": ans.answer} for ans in submission.answers]
