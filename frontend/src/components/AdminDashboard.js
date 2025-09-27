@@ -100,8 +100,21 @@ const AdminDashboard = () => {
 
   const addQuestion = () => {
     if (!currentQuestion.question) {
-      alert('Please enter a question');
+      toast.error('Please enter a question');
       return;
+    }
+    
+    // Validation for multiple choice
+    if (currentQuestion.type === 'multiple_choice') {
+      const filledOptions = currentQuestion.options.filter(opt => opt.trim() !== '');
+      if (filledOptions.length < 2) {
+        toast.error('Please provide at least 2 options for multiple choice questions');
+        return;
+      }
+      if (!currentQuestion.correct_answer) {
+        toast.error('Please select the correct answer for multiple choice questions');
+        return;
+      }
     }
     
     const question = { ...currentQuestion, id: Date.now().toString() };
@@ -130,7 +143,7 @@ const AdminDashboard = () => {
       points: 1
     });
     
-    alert('Question added!');
+    toast.success('Question added successfully!');
   };
 
   const removeQuestion = (index) => {
