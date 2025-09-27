@@ -194,7 +194,7 @@ const ApplicantDashboard = () => {
                   <Card key={test.id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover">
                     <CardHeader>
                       <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{test.testTitle}</CardTitle>
+                        <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
                         {getStatusBadge(test.status)}
                       </div>
                     </CardHeader>
@@ -202,11 +202,16 @@ const ApplicantDashboard = () => {
                       <div className="space-y-3">
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                           <Calendar className="h-4 w-4" />
-                          <span>{test.scheduledDate.toLocaleDateString()}</span>
+                          <span>
+                            {test.scheduled_date 
+                              ? new Date(test.scheduled_date).toLocaleDateString()
+                              : 'Not scheduled'
+                            }
+                          </span>
                         </div>
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                           <Clock className="h-4 w-4" />
-                          <span>{test.duration} minutes</span>
+                          <span>{test.test?.duration_minutes || 90} minutes</span>
                         </div>
                         <Button 
                           className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
