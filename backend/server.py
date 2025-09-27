@@ -448,10 +448,32 @@ async def get_my_invites(current_user: User = Depends(get_current_user)):
         # Get the associated test
         test = await db.tests.find_one({"id": invite["test_id"]})
         
+        # Clean invite data removing ObjectId
+        invite_clean = {
+            "id": invite["id"],
+            "test_id": invite["test_id"],
+            "applicant_email": invite["applicant_email"],
+            "applicant_name": invite["applicant_name"],
+            "status": invite["status"],
+            "invite_token": invite["invite_token"],
+            "scheduled_date": invite.get("scheduled_date"),
+            "created_at": invite["created_at"]
+        }
+        
+        # Clean test data removing ObjectId
+        test_clean = None
+        if test:
+            test_clean = {
+                "id": test["id"],
+                "title": test["title"],
+                "description": test["description"],
+                "duration_minutes": test["duration_minutes"]
+            }
+        
         # Add test details to invite
         invite_with_test = {
-            **invite,
-            "test": test,
+            **invite_clean,
+            "test": test_clean,
             "test_title": test["title"] if test else "Unknown Test"
         }
         invites.append(invite_with_test)
