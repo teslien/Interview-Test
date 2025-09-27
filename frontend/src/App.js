@@ -179,6 +179,7 @@ function App() {
             <Route path="/" element={<DefaultRoute />} />
           </Routes>
         </BrowserRouter>
+        <Toaster />
       </AuthProvider>
     </div>
   );
