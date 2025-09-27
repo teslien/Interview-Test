@@ -139,26 +139,18 @@ function App() {
         <BrowserRouter>
           <Routes>
             {/* Public Routes */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/test-invite/:token" element={<TestInvite />} />
-            <Route path="/take-test/:token" element={<TakeTest />} />
+            <Route path="/login" element={<SimpleLogin />} />
             
             {/* Protected Routes */}
             <Route path="/admin" element={
               <ProtectedRoute requiredRole="admin">
-                <AdminDashboard />
+                <SimpleAdmin />
               </ProtectedRoute>
             } />
             
             <Route path="/applicant" element={
               <ProtectedRoute requiredRole="applicant">
-                <ApplicantDashboard />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/monitor/:inviteId" element={
-              <ProtectedRoute requiredRole="admin">
-                <VideoMonitor />
+                <SimpleApplicant />
               </ProtectedRoute>
             } />
             
