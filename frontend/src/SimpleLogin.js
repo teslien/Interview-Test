@@ -131,6 +131,11 @@ const SimpleLogin = () => {
           <button
             type="submit"
             disabled={isLoading}
+            onClick={(e) => {
+              e.preventDefault();
+              alert('Button clicked!');
+              handleLogin(e);
+            }}
             style={{
               width: '100%',
               padding: '12px',
@@ -145,6 +150,32 @@ const SimpleLogin = () => {
             }}
           >
             {isLoading ? 'Signing In...' : 'Sign In'}
+          </button>
+          
+          <button
+            type="button"
+            onClick={async () => {
+              alert('Direct test button clicked');
+              try {
+                const result = await login('admin@example.com', 'admin123');
+                alert('Direct login result: ' + JSON.stringify(result));
+              } catch (e) {
+                alert('Direct login error: ' + e.message);
+              }
+            }}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: '#48bb78',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              marginTop: '8px'
+            }}
+          >
+            Test Direct Login
           </button>
         </form>
         
