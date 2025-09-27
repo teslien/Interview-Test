@@ -156,6 +156,45 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleEditTest = (test) => {
+    setEditingTest({
+      ...test,
+      questions: [...test.questions]
+    });
+    setShowEditTest(true);
+  };
+
+  const handleUpdateTest = async () => {
+    if (!editingTest.title || !editingTest.description || editingTest.questions.length === 0) {
+      alert('Please fill in all required fields and add at least one question');
+      return;
+    }
+    
+    try {
+      await axios.put(`${API}/tests/${editingTest.id}`, editingTest);
+      alert('Test updated successfully!');
+      setShowEditTest(false);
+      setEditingTest(null);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to update test:', error);
+      alert('Failed to update test');
+    }
+  };
+
+  const handleDeleteTest = async (testId, testTitle) => {
+    if (window.confirm(`Are you sure you want to delete "${testTitle}"? This action cannot be undone.`)) {
+      try {
+        await axios.delete(`${API}/tests/${testId}`);
+        alert('Test deleted successfully!');
+        fetchData();
+      } catch (error) {
+        console.error('Failed to delete test:', error);
+        alert('Failed to delete test');
+      }
+    }
+  };
+
   const getStatusBadge = (status) => {
     const statusConfig = {
       sent: { color: 'bg-blue-100 text-blue-800', label: 'Sent' },
