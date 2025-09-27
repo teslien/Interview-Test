@@ -358,6 +358,21 @@ async def start_test(token: str):
         "test": test_clean
     }
 
+@api_router.post("/start-test/{token}")
+async def start_test_monitoring(token: str):
+    """Mark test as started and in progress"""
+    invite = await db.invites.find_one({"invite_token": token})
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid test token")
+    
+    # Update invite status to in_progress
+    await db.invites.update_one(
+        {"invite_token": token},
+        {"$set": {"status": "in_progress", "started_at": datetime.now(timezone.utc)}}
+    )
+    
+    return {"message": "Test started successfully", "status": "in_progress"}
+
 @api_router.post("/submit-test/{token}")
 async def submit_test(token: str, submission: TestSubmissionCreate):
     invite = await db.invites.find_one({"invite_token": token, "status": "in_progress"})
