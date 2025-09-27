@@ -112,7 +112,7 @@ class TestSubmission(BaseModel):
     test_id: str
     applicant_email: EmailStr
     answers: List[TestAnswer]
-    started_at: datetime
+    started_at: Optional[datetime] = None
     submitted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     score: Optional[float] = None
     is_monitored: bool = False
