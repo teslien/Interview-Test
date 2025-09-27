@@ -112,7 +112,7 @@ const TakeTest = () => {
       };
       
       await axios.post(`${API}/submit-test/${token}`, submissionData);
-      toast.success('Test submitted successfully!');
+      alert('Test submitted successfully!');
       
       // Stop video stream
       if (videoStream) {
