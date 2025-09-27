@@ -132,16 +132,26 @@ const WorkingTakeTest = () => {
 
   const handleSubmitTest = async () => {
     try {
+      // Convert answers object to array format expected by backend
+      const answersArray = Object.entries(answers).map(([questionId, answer]) => ({
+        question_id: questionId,
+        answer: answer
+      }));
+      
       const submission = {
-        answers: answers,
-        submitted_at: new Date().toISOString()
+        answers: answersArray
       };
       
-      await axios.post(`${API}/submit-test/${token}`, submission);
-      toast.success('Test submitted successfully!');
+      console.log('Submitting test with answers:', submission);
+      
+      const response = await axios.post(`${API}/submit-test/${token}`, submission);
+      console.log('Submission response:', response.data);
+      
+      toast.success('Test submitted successfully! Score: ' + (response.data.score || 0) + '%');
       navigate('/');
     } catch (error) {
       console.error('Failed to submit test:', error);
+      console.error('Error response:', error.response);
       toast.error('Failed to submit test: ' + (error.response?.data?.detail || error.message));
     }
   };
