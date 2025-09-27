@@ -777,7 +777,7 @@ const AdminDashboard = () => {
               <Button
                 onClick={handleCreateTest}
                 className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-                style={{ position: 'relative', zIndex: 1000 }}
+                type="button"
               >
                 Create Test
               </Button>
