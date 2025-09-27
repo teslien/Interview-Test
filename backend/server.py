@@ -323,11 +323,8 @@ async def start_test(token: str):
     if not test:
         raise HTTPException(status_code=404, detail="Test not found")
     
-    # Update invite status
-    await db.invites.update_one(
-        {"invite_token": token},
-        {"$set": {"status": "in_progress"}}
-    )
+    # Don't update status here - only update when test actually starts
+    # Status will be updated when the test is submitted or when actual monitoring begins
     
     # Remove correct answers from questions for security
     questions_for_display = []
