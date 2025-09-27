@@ -266,7 +266,7 @@ const ApplicantDashboard = () => {
                             <div className="h-2 w-20 bg-gray-200 rounded-full overflow-hidden">
                               <div 
                                 className="h-full bg-gradient-to-r from-green-500 to-blue-500 rounded-full"
-                                style={{ width: `${test.score}%` }}
+                                style={{ width: `${test.score || 0}%` }}
                               ></div>
                             </div>
                             <span className="text-sm font-medium">{test.score || 0}%</span>
