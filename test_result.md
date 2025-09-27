@@ -270,8 +270,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Create Test Modal Functionality"
-    - "End-to-End React Flow Testing"
+    - "Test Submission Flow End-to-End"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
