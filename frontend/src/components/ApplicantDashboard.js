@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
-import { toast } from 'sonner';
 
 const ApplicantDashboard = () => {
   const { user, logout } = useAuth();
