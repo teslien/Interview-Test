@@ -175,6 +175,11 @@ def send_email(to_email: str, subject: str, body: str):
         print(f"Email sending failed: {e}")
         return False
 
+# Root route for testing
+@api_router.get("/")
+async def root():
+    return {"message": "Pre-Interview Test Platform API", "status": "running"}
+
 # Authentication Routes
 @api_router.post("/auth/register", response_model=User)
 async def register(user_create: UserCreate):
