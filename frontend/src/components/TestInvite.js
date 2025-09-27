@@ -48,7 +48,7 @@ const TestInvite = () => {
 
   const handleSchedule = async () => {
     if (!selectedDate || !selectedTime) {
-      toast.error('Please select both date and time');
+      alert('Please select both date and time');
       return;
     }
 
