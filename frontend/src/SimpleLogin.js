@@ -26,8 +26,11 @@ const SimpleLogin = () => {
     e.preventDefault();
     setIsLoading(true);
     
+    alert('Login form submitted with: ' + loginData.email);
+    
     try {
       const userData = await login(loginData.email, loginData.password);
+      alert('Login response received: ' + JSON.stringify(userData));
       if (userData.role === 'admin') {
         navigate('/admin');
       } else {
@@ -35,6 +38,7 @@ const SimpleLogin = () => {
       }
     } catch (error) {
       console.error('Login failed:', error);
+      alert('Login failed: ' + error.message);
     } finally {
       setIsLoading(false);
     }
