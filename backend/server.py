@@ -337,12 +337,28 @@ async def start_test(token: str):
             del question_dict["correct_answer"]
         questions_for_display.append(question_dict)
     
-    test_for_display = dict(test)
-    test_for_display["questions"] = questions_for_display
+    # Clean the test object and remove ObjectId
+    test_clean = {
+        "id": test["id"],
+        "title": test["title"],
+        "description": test["description"],
+        "duration_minutes": test["duration_minutes"],
+        "questions": questions_for_display
+    }
+    
+    # Clean the invite object and remove ObjectId  
+    invite_clean = {
+        "id": invite["id"],
+        "test_id": invite["test_id"],
+        "applicant_email": invite["applicant_email"],
+        "applicant_name": invite["applicant_name"],
+        "status": invite["status"],
+        "invite_token": invite["invite_token"]
+    }
     
     return {
-        "invite": TestInvite(**invite),
-        "test": test_for_display
+        "invite": invite_clean,
+        "test": test_clean
     }
 
 @api_router.post("/submit-test/{token}")
