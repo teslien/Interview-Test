@@ -176,6 +176,12 @@ function App() {
               </ProtectedRoute>
             } />
             
+            <Route path="/monitoring" element={
+              <ProtectedRoute requiredRole="admin">
+                <TestMonitoring />
+              </ProtectedRoute>
+            } />
+            
             {/* Default Route */}
             <Route path="/" element={<DefaultRoute />} />
           </Routes>
