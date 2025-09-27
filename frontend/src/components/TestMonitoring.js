@@ -25,8 +25,11 @@ const TestMonitoring = () => {
 
   const fetchActiveTests = async () => {
     try {
-      // Get invitations that are in progress
-      const response = await axios.get(`${API}/invites`);
+      // Get all invitations (admin can see all)
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API}/invites`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const inProgressTests = response.data.filter(invite => 
         invite.status === 'in_progress' || invite.status === 'sent'
       );
@@ -34,7 +37,7 @@ const TestMonitoring = () => {
       setActiveTests(inProgressTests);
     } catch (error) {
       console.error('Failed to fetch active tests:', error);
-      toast.error('Failed to fetch active tests');
+      toast.error('Failed to fetch active tests: ' + (error.response?.data?.detail || error.message));
     }
   };
 
