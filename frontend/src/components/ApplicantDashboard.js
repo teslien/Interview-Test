@@ -49,7 +49,7 @@ const ApplicantDashboard = () => {
           test: { title: 'Sample Frontend Test', duration_minutes: 90 },
           scheduled_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           status: 'scheduled',
-          token: 'a76fc4d4-b87e-4681-be24-402f42fad68c'
+          token: '0e3b7e4e-cc78-4b86-92a7-d85ab37ea726'
         }
       ]);
       
