@@ -150,7 +150,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             {/* Public Routes */}
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<SimpleLoginFixed />} />
             <Route path="/test-invite/:token" element={<TestInvite />} />
             <Route path="/take-test/:token" element={<TakeTest />} />
             
