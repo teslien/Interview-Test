@@ -421,6 +421,26 @@ async def get_result_details(submission_id: str, admin: User = Depends(get_admin
         "test": Test(**test) if test else None
     }
 
+@api_router.get("/my-invites")
+async def get_my_invites(current_user: User = Depends(get_current_user)):
+    """Get test invitations for current applicant user"""
+    invites = []
+    
+    # Find invites by user email (assuming invites are sent to applicant_email)
+    async for invite in db.invites.find({"applicant_email": current_user.email}):
+        # Get the associated test
+        test = await db.tests.find_one({"id": invite["test_id"]})
+        
+        # Add test details to invite
+        invite_with_test = {
+            **invite,
+            "test": test,
+            "test_title": test["title"] if test else "Unknown Test"
+        }
+        invites.append(invite_with_test)
+    
+    return invites
+
 # WebRTC Signaling Routes (for video monitoring)
 @api_router.post("/webrtc/offer")
 async def handle_webrtc_offer(data: Dict[str, Any]):
