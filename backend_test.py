@@ -505,6 +505,17 @@ def main():
         ("Applicant Forbidden Access", tester.test_applicant_forbidden_access),
         ("User Registration", tester.test_user_registration),
         ("Duplicate Registration", tester.test_duplicate_registration),
+        ("Create Multiple Choice Test", tester.test_create_test_multiple_choice),
+        ("Create Coding Test", tester.test_create_test_coding),
+        ("Get Specific Test", tester.test_get_specific_test),
+        ("Create Test Invitation", tester.test_create_test_invitation),
+        ("Get Invitations", tester.test_get_invitations),
+        ("Get Invite by Token", tester.test_get_invite_by_token),
+        ("Applicant Cannot Create Test", tester.test_applicant_cannot_create_test),
+        ("Applicant Cannot Create Invite", tester.test_applicant_cannot_create_invite),
+        ("Invalid Test Creation", tester.test_invalid_test_creation),
+        ("Get Test Results", tester.test_get_results),
+        ("Applicant Cannot Access Results", tester.test_applicant_cannot_access_results),
     ]
     
     # Run all tests
