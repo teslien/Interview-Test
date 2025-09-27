@@ -81,7 +81,7 @@ const TakeTest = () => {
       return true;
     } catch (error) {
       console.error('Failed to start video:', error);
-      toast.error('Camera access is required for the test');
+      alert('Camera access is required for the test');
       return false;
     }
   };
