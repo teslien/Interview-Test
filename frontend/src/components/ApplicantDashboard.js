@@ -69,9 +69,10 @@ const ApplicantDashboard = () => {
   };
 
   const handleTakeTest = (test) => {
-    if (test.token) {
+    const token = test.token || test.invite_token;
+    if (token) {
       // Navigate to test taking page with token
-      navigate(`/take-test/${test.token}`);
+      navigate(`/take-test/${token}`);
     } else {
       alert('Test token not available. Please contact administrator.');
     }
