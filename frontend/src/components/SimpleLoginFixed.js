@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
+import BrandIcon from './ui/BrandIcon';
 
 const SimpleLoginFixed = () => {
   const navigate = useNavigate();
@@ -205,7 +206,9 @@ const SimpleLoginFixed = () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.logo}>✓</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+          <BrandIcon className="h-16 w-16" showText={true} textClassName="text-2xl font-bold" />
+        </div>
         <h1 style={styles.title}>Interview Test Platform</h1>
         <p style={styles.subtitle}>Secure pre-interview assessments with live monitoring</p>
         

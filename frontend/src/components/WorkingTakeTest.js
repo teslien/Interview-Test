@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
+import BrandIcon from '../components/ui/BrandIcon';
 
 // WebRTC Configuration
 const RTC_CONFIGURATION = {
@@ -431,19 +432,11 @@ const WorkingTakeTest = () => {
           textAlign: 'center'
         }}>
           <div style={{
-            width: '80px',
-            height: '80px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '20px',
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 24px',
-            color: 'white',
-            fontSize: '32px',
-            fontWeight: 'bold'
+            margin: '0 auto 24px'
           }}>
-            📝
+            <BrandIcon className="h-20 w-20" />
           </div>
           
           <h1 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>
@@ -515,13 +508,16 @@ const WorkingTakeTest = () => {
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
-                {test?.title || 'Test'}
-              </h1>
-              <p style={{ color: '#6b7280', margin: 0 }}>
-                Question {currentQuestionIndex + 1} of {test?.questions?.length || 0}
-              </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <BrandIcon className="h-8 w-8" />
+              <div>
+                <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
+                  {test?.title || 'Test'}
+                </h1>
+                <p style={{ color: '#6b7280', margin: 0 }}>
+                  Question {currentQuestionIndex + 1} of {test?.questions?.length || 0}
+                </p>
+              </div>
             </div>
             <div style={{ 
               display: 'flex', 
