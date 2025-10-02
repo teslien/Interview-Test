@@ -1011,6 +1011,132 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
             "needs_manual_review": has_manual_questions
         }
 
+# Admin Settings Routes
+@api_router.get("/admin/applicants")
+async def get_applicants(admin: User = Depends(get_admin_user)):
+    """Get all applicants for admin management"""
+    async with db_pool.acquire() as conn:
+        applicants = await conn.fetch("""
+            SELECT id, email, full_name, created_at, is_active
+            FROM users 
+            WHERE role = 'applicant'
+            ORDER BY created_at DESC
+        """)
+        
+        return [
+            {
+                "id": str(row['id']),
+                "email": row['email'],
+                "full_name": row['full_name'],
+                "created_at": row['created_at'],
+                "is_active": row['is_active']
+            } for row in applicants
+        ]
+
+@api_router.put("/admin/applicants/{applicant_id}/status")
+async def update_applicant_status(
+    applicant_id: str, 
+    status_data: dict,
+    admin: User = Depends(get_admin_user)
+):
+    """Update applicant active status"""
+    async with db_pool.acquire() as conn:
+        # Check if applicant exists
+        applicant = await conn.fetchrow(
+            "SELECT id FROM users WHERE id = $1 AND role = 'applicant'",
+            uuid.UUID(applicant_id)
+        )
+        
+        if not applicant:
+            raise HTTPException(status_code=404, detail="Applicant not found")
+        
+        # Update status
+        is_active = status_data.get('status') == 'active'
+        await conn.execute(
+            "UPDATE users SET is_active = $1 WHERE id = $2",
+            is_active, uuid.UUID(applicant_id)
+        )
+        
+        return {"message": f"Applicant status updated to {'active' if is_active else 'inactive'}"}
+
+@api_router.get("/admin/email-settings")
+async def get_email_settings(admin: User = Depends(get_admin_user)):
+    """Get email configuration settings"""
+    async with db_pool.acquire() as conn:
+        settings = await conn.fetchrow("""
+            SELECT smtp_host, smtp_port, smtp_user, smtp_password, from_email, from_name
+            FROM admin_email_settings 
+            WHERE admin_id = $1
+        """, uuid.UUID(admin.id))
+        
+        if not settings:
+            # Return default settings if none exist
+            return {
+                "smtpHost": "",
+                "smtpPort": 587,
+                "smtpUser": "",
+                "smtpPassword": "",
+                "fromEmail": "",
+                "fromName": "12th Wonder Interview Platform"
+            }
+        
+        return {
+            "smtpHost": settings['smtp_host'] or "",
+            "smtpPort": settings['smtp_port'] or 587,
+            "smtpUser": settings['smtp_user'] or "",
+            "smtpPassword": settings['smtp_password'] or "",
+            "fromEmail": settings['from_email'] or "",
+            "fromName": settings['from_name'] or "12th Wonder Interview Platform"
+        }
+
+@api_router.put("/admin/email-settings")
+async def update_email_settings(
+    settings: dict,
+    admin: User = Depends(get_admin_user)
+):
+    """Update email configuration settings"""
+    async with db_pool.acquire() as conn:
+        # Check if settings exist
+        existing = await conn.fetchrow(
+            "SELECT id FROM admin_email_settings WHERE admin_id = $1",
+            uuid.UUID(admin.id)
+        )
+        
+        if existing:
+            # Update existing settings
+            await conn.execute("""
+                UPDATE admin_email_settings 
+                SET smtp_host = $1, smtp_port = $2, smtp_user = $3, 
+                    smtp_password = $4, from_email = $5, from_name = $6,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE admin_id = $7
+            """, 
+            settings.get('smtpHost', ''),
+            settings.get('smtpPort', 587),
+            settings.get('smtpUser', ''),
+            settings.get('smtpPassword', ''),
+            settings.get('fromEmail', ''),
+            settings.get('fromName', '12th Wonder Interview Platform'),
+            uuid.UUID(admin.id)
+            )
+        else:
+            # Create new settings
+            await conn.execute("""
+                INSERT INTO admin_email_settings 
+                (admin_id, smtp_host, smtp_port, smtp_user, smtp_password, from_email, from_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            uuid.UUID(admin.id),
+            settings.get('smtpHost', ''),
+            settings.get('smtpPort', 587),
+            settings.get('smtpUser', ''),
+            settings.get('smtpPassword', ''),
+            settings.get('fromEmail', ''),
+            settings.get('fromName', '12th Wonder Interview Platform')
+            )
+        
+        return {"message": "Email settings updated successfully"}
+
 # Results Routes
 @api_router.get("/results")
 async def get_results(

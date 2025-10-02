@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
-import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing, CheckSquare, AlertCircle } from 'lucide-react';
+import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing, CheckSquare, AlertCircle, Settings, Mail, UserCheck, UserX, Shield } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
 import BrandIcon from '../components/ui/BrandIcon';
 
@@ -29,6 +29,16 @@ const AdminDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [applicants, setApplicants] = useState([]);
+  const [emailSettings, setEmailSettings] = useState({
+    smtpHost: '',
+    smtpPort: 587,
+    smtpUser: '',
+    smtpPassword: '',
+    fromEmail: '',
+    fromName: 'Interview Platform'
+  });
   const [scoringQueue, setScoringQueue] = useState([]);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [submissionDetails, setSubmissionDetails] = useState(null);
@@ -217,6 +227,51 @@ const AdminDashboard = () => {
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const fetchApplicants = async () => {
+    try {
+      const response = await axios.get(`${API}/admin/applicants`);
+      setApplicants(response.data);
+    } catch (error) {
+      console.error('Failed to fetch applicants:', error);
+      toast.error('Failed to load applicants');
+    }
+  };
+
+  const fetchEmailSettings = async () => {
+    try {
+      const response = await axios.get(`${API}/admin/email-settings`);
+      setEmailSettings(response.data);
+    } catch (error) {
+      console.error('Failed to fetch email settings:', error);
+    }
+  };
+
+  const updateEmailSettings = async () => {
+    try {
+      await axios.put(`${API}/admin/email-settings`, emailSettings);
+      toast.success('Email settings updated successfully!');
+    } catch (error) {
+      console.error('Failed to update email settings:', error);
+      toast.error('Failed to update email settings');
+    }
+  };
+
+  const toggleApplicantStatus = async (applicantId, currentStatus) => {
+    try {
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+      await axios.put(`${API}/admin/applicants/${applicantId}/status`, { status: newStatus });
+      setApplicants(prev => 
+        prev.map(applicant => 
+          applicant.id === applicantId ? { ...applicant, is_active: newStatus === 'active' } : applicant
+        )
+      );
+      toast.success(`Applicant ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`);
+    } catch (error) {
+      console.error('Failed to update applicant status:', error);
+      toast.error('Failed to update applicant status');
     }
   };
 
@@ -594,6 +649,16 @@ const AdminDashboard = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Settings */}
+              <Button
+                onClick={() => setShowSettings(true)}
+                variant="outline"
+                size="sm"
+                className="relative"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+
               {/* Notification Bell */}
               <div className="relative notification-dropdown">
                 <Button
@@ -2256,6 +2321,223 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Settings Offcanvas */}
+      {showSettings && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => setShowSettings(false)}
+          />
+          
+          {/* Settings Panel */}
+          <div className="fixed top-0 right-0 h-full w-full max-w-2xl bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Admin Settings
+              </h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
+              <Tabs defaultValue="applicants" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="applicants" className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Applicant Management
+                  </TabsTrigger>
+                  <TabsTrigger value="email" className="flex items-center gap-2">
+                    <Mail className="h-4 w-4" />
+                    Email Settings
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Applicant Management Tab */}
+                <TabsContent value="applicants" className="space-y-6 mt-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium">Manage Applicants</h3>
+                    <Button
+                      onClick={fetchApplicants}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Refresh
+                    </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {applicants.map((applicant) => (
+                      <Card key={applicant.id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold">
+                              {applicant.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{applicant.full_name}</p>
+                              <p className="text-sm text-gray-600">{applicant.email}</p>
+                              <p className="text-xs text-gray-500">
+                                Joined: {new Date(applicant.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant={applicant.is_active ? "default" : "secondary"}>
+                              {applicant.is_active ? "Active" : "Inactive"}
+                            </Badge>
+                            <Button
+                              onClick={() => toggleApplicantStatus(applicant.id, applicant.is_active ? 'active' : 'inactive')}
+                              variant="outline"
+                              size="sm"
+                              className={applicant.is_active ? "text-red-600 hover:text-red-700" : "text-green-600 hover:text-green-700"}
+                            >
+                              {applicant.is_active ? (
+                                <>
+                                  <UserX className="h-4 w-4 mr-1" />
+                                  Deactivate
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="h-4 w-4 mr-1" />
+                                  Activate
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                    {applicants.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Users className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                        <p>No applicants found</p>
+                        <p className="text-sm">Click refresh to load applicants</p>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+
+                {/* Email Settings Tab */}
+                <TabsContent value="email" className="space-y-6 mt-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium">Email Configuration</h3>
+                    <Button
+                      onClick={fetchEmailSettings}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Load Settings
+                    </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="smtp-host">SMTP Host</Label>
+                        <Input
+                          id="smtp-host"
+                          value={emailSettings.smtpHost}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtpHost: e.target.value})}
+                          placeholder="smtp.gmail.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="smtp-port">SMTP Port</Label>
+                        <Input
+                          id="smtp-port"
+                          type="number"
+                          value={emailSettings.smtpPort}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtpPort: parseInt(e.target.value)})}
+                          placeholder="587"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="smtp-user">SMTP Username</Label>
+                        <Input
+                          id="smtp-user"
+                          value={emailSettings.smtpUser}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtpUser: e.target.value})}
+                          placeholder="your-email@gmail.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="smtp-password">SMTP Password</Label>
+                        <Input
+                          id="smtp-password"
+                          type="password"
+                          value={emailSettings.smtpPassword}
+                          onChange={(e) => setEmailSettings({...emailSettings, smtpPassword: e.target.value})}
+                          placeholder="App password or SMTP password"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="from-email">From Email</Label>
+                        <Input
+                          id="from-email"
+                          value={emailSettings.fromEmail}
+                          onChange={(e) => setEmailSettings({...emailSettings, fromEmail: e.target.value})}
+                          placeholder="noreply@yourcompany.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="from-name">From Name</Label>
+                        <Input
+                          id="from-name"
+                          value={emailSettings.fromName}
+                          onChange={(e) => setEmailSettings({...emailSettings, fromName: e.target.value})}
+                          placeholder="Interview Platform"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      <Button
+                        onClick={updateEmailSettings}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Save Email Settings
+                      </Button>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start space-x-2">
+                        <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-blue-900">Email Security Tips</h4>
+                          <ul className="text-sm text-blue-700 mt-1 space-y-1">
+                            <li>• Use app-specific passwords for Gmail/Outlook</li>
+                            <li>• Enable 2FA on your email account</li>
+                            <li>• Test email settings before going live</li>
+                            <li>• Keep SMTP credentials secure</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Delete Confirmation Dialog */}
