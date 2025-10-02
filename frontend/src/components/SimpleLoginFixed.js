@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import BrandIcon from './ui/BrandIcon';
+import axios from 'axios';
 
 const SimpleLoginFixed = () => {
   const navigate = useNavigate();
@@ -23,6 +24,24 @@ const SimpleLoginFixed = () => {
     role: 'applicant'
   });
 
+  // Admin restriction state
+  const [adminExists, setAdminExists] = useState(false);
+  const [checkingAdminStatus, setCheckingAdminStatus] = useState(true);
+
+  // Check if admin exists
+  const checkAdminStatus = async () => {
+    try {
+      const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/admin/check-signup-restriction`);
+      setAdminExists(response.data.admin_exists);
+    } catch (error) {
+      console.error('Failed to check admin status:', error);
+      // Default to allowing admin signup if check fails
+      setAdminExists(false);
+    } finally {
+      setCheckingAdminStatus(false);
+    }
+  };
+
   // Redirect if already logged in
   React.useEffect(() => {
     if (user) {
@@ -33,6 +52,11 @@ const SimpleLoginFixed = () => {
       }
     }
   }, [user, navigate]);
+
+  // Check admin status on component mount
+  useEffect(() => {
+    checkAdminStatus();
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -209,7 +233,7 @@ const SimpleLoginFixed = () => {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
           <BrandIcon className="h-16 w-16" showText={true} textClassName="text-2xl font-bold" />
         </div>
-        <h1 style={styles.title}>Interview Test Platform</h1>
+        {/* <h1 style={styles.title}>Interview Test Platform</h1> */}
         <p style={styles.subtitle}>Secure pre-interview assessments with live monitoring</p>
         
         {/* Tabs */}
@@ -326,10 +350,28 @@ const SimpleLoginFixed = () => {
                 value={registerData.role}
                 onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
                 data-testid="register-role-select"
+                disabled={checkingAdminStatus}
               >
                 <option value="applicant">Applicant</option>
-                <option value="admin">Admin</option>
+                {checkingAdminStatus ? (
+                  <option value="applicant">Loading...</option>
+                ) : (
+                  !adminExists && <option value="admin">Admin</option>
+                )}
               </select>
+              {adminExists && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '8px 12px',
+                  backgroundColor: '#fef3c7',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  color: '#92400e'
+                }}>
+                  <strong>Note:</strong> Admin registration is not available. Only applicants can register when admins already exist.
+                </div>
+              )}
             </div>
             
             <button

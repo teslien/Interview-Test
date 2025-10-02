@@ -318,6 +318,17 @@ async def register(user_create: UserCreate):
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
         
+        # Check if admin signup is allowed
+        if user_create.role == 'admin':
+            admin_count = await conn.fetchrow("""
+                SELECT COUNT(*) as count FROM users WHERE role = 'admin'
+            """)
+            if admin_count['count'] > 0:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Admin registration is not allowed. Only applicants can register when admins already exist."
+                )
+        
         # Create user
         user_id = str(uuid.uuid4())
         hashed_password = get_password_hash(user_create.password)
@@ -1600,6 +1611,250 @@ async def test_email_settings(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email test failed: {str(e)}")
+
+# Admin Management Routes (only for first admin)
+@api_router.get("/admin/is-first-admin")
+async def is_first_admin(current_user: User = Depends(get_current_user)):
+    """Check if current user is the first admin"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Get the first admin (oldest by created_at)
+        first_admin = await conn.fetchrow("""
+            SELECT id, email, full_name, created_at
+            FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+            LIMIT 1
+        """)
+        
+        if not first_admin:
+            return {"is_first_admin": False}
+        
+        return {
+            "is_first_admin": str(first_admin['id']) == current_user.id,
+            "first_admin": {
+                "id": str(first_admin['id']),
+                "email": first_admin['email'],
+                "full_name": first_admin['full_name'],
+                "created_at": first_admin['created_at'].isoformat()
+            }
+        }
+
+@api_router.get("/admin/list-admins")
+async def list_admins(current_user: User = Depends(get_current_user)):
+    """List all admins (only first admin can access)"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Check if current user is first admin
+        first_admin = await conn.fetchrow("""
+            SELECT id FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+            LIMIT 1
+        """)
+        
+        if not first_admin or str(first_admin['id']) != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the superadmin can manage other admins")
+        
+        # Get all admins
+        admins = await conn.fetch("""
+            SELECT id, email, full_name, created_at, is_active
+            FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+        """)
+        
+        return [
+            {
+                "id": str(row['id']),
+                "email": row['email'],
+                "full_name": row['full_name'],
+                "created_at": row['created_at'].isoformat(),
+                "is_active": row['is_active'],
+                "is_first_admin": str(row['id']) == str(first_admin['id'])
+            } for row in admins
+        ]
+
+@api_router.post("/admin/create-admin")
+async def create_admin(
+    admin_data: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new admin (only first admin can access)"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Check if current user is first admin
+        first_admin = await conn.fetchrow("""
+            SELECT id FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+            LIMIT 1
+        """)
+        
+        if not first_admin or str(first_admin['id']) != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the superadmin can create other admins")
+        
+        # Validate required fields
+        email = admin_data.get('email')
+        password = admin_data.get('password')
+        full_name = admin_data.get('full_name')
+        
+        if not email or not password or not full_name:
+            raise HTTPException(status_code=400, detail="Email, password, and full name are required")
+        
+        # Check if user already exists
+        existing_user = await conn.fetchrow(
+            "SELECT id FROM users WHERE email = $1",
+            email
+        )
+        if existing_user:
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+        
+        # Create new admin
+        admin_id = str(uuid.uuid4())
+        hashed_password = get_password_hash(password)
+        
+        await conn.execute("""
+            INSERT INTO users (id, email, password, full_name, role, is_active)
+            VALUES ($1, $2, $3, $4, 'admin', true)
+        """, uuid.UUID(admin_id), email, hashed_password, full_name)
+        
+        return {
+            "message": "Admin created successfully",
+            "admin": {
+                "id": admin_id,
+                "email": email,
+                "full_name": full_name,
+                "role": "admin"
+            }
+        }
+
+@api_router.put("/admin/change-password/{admin_id}")
+async def change_admin_password(
+    admin_id: str,
+    password_data: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """Change admin password (only first admin can access)"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Check if current user is first admin
+        first_admin = await conn.fetchrow("""
+            SELECT id FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+            LIMIT 1
+        """)
+        
+        if not first_admin or str(first_admin['id']) != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the superadmin can change other admin passwords")
+        
+        # Check if target admin exists
+        target_admin = await conn.fetchrow(
+            "SELECT id, email FROM users WHERE id = $1 AND role = 'admin'",
+            uuid.UUID(admin_id)
+        )
+        
+        if not target_admin:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        
+        # Validate new password
+        new_password = password_data.get('new_password')
+        if not new_password or len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+        
+        # Update password
+        hashed_password = get_password_hash(new_password)
+        await conn.execute(
+            "UPDATE users SET password = $1 WHERE id = $2",
+            hashed_password, uuid.UUID(admin_id)
+        )
+        
+        return {"message": f"Password changed successfully for {target_admin['email']}"}
+
+@api_router.delete("/admin/delete-admin/{admin_id}")
+async def delete_admin(
+    admin_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete an admin (only first admin can access)"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Check if current user is first admin
+        first_admin = await conn.fetchrow("""
+            SELECT id FROM users 
+            WHERE role = 'admin'
+            ORDER BY created_at ASC
+            LIMIT 1
+        """)
+        
+        if not first_admin or str(first_admin['id']) != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the superadmin can delete other admins")
+        
+        # Prevent deleting the first admin
+        if str(first_admin['id']) == admin_id:
+            raise HTTPException(status_code=400, detail="Cannot delete the superadmin")
+        
+        # Check if target admin exists
+        target_admin = await conn.fetchrow(
+            "SELECT id, email FROM users WHERE id = $1 AND role = 'admin'",
+            uuid.UUID(admin_id)
+        )
+        
+        if not target_admin:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        
+        # Delete admin and all associated data
+        async with conn.transaction():
+            # Delete admin's email settings
+            await conn.execute(
+                "DELETE FROM admin_email_settings WHERE admin_id = $1",
+                uuid.UUID(admin_id)
+            )
+            
+            # Delete admin's theme settings
+            await conn.execute(
+                "DELETE FROM admin_theme_settings WHERE admin_id = $1",
+                uuid.UUID(admin_id)
+            )
+            
+            # Delete admin's notifications
+            await conn.execute(
+                "DELETE FROM admin_notifications WHERE admin_id = $1",
+                uuid.UUID(admin_id)
+            )
+            
+            # Delete admin user
+            await conn.execute(
+                "DELETE FROM users WHERE id = $1",
+                uuid.UUID(admin_id)
+            )
+        
+        return {"message": f"Admin {target_admin['email']} deleted successfully"}
+
+@api_router.get("/admin/check-signup-restriction")
+async def check_signup_restriction():
+    """Check if signup should be restricted to applicants only"""
+    async with db_pool.acquire() as conn:
+        # Check if any admin exists
+        admin_exists = await conn.fetchrow("""
+            SELECT COUNT(*) as count FROM users WHERE role = 'admin'
+        """)
+        
+        return {
+            "admin_exists": admin_exists['count'] > 0,
+            "allow_admin_signup": admin_exists['count'] == 0
+        }
 
 @api_router.get("/admin/theme-settings")
 async def get_theme_settings(admin: User = Depends(get_admin_user)):

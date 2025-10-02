@@ -124,6 +124,21 @@ const AdminDashboard = () => {
     level: 'intermediate'
   });
 
+  // Admin Management State
+  const [isFirstAdmin, setIsFirstAdmin] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [showAdminManagement, setShowAdminManagement] = useState(false);
+  const [showCreateAdminDialog, setShowCreateAdminDialog] = useState(false);
+  const [showChangePasswordDialog, setShowChangePasswordDialog] = useState(false);
+  const [selectedAdmin, setSelectedAdmin] = useState(null);
+  const [newAdminData, setNewAdminData] = useState({
+    email: '',
+    password: '',
+    full_name: ''
+  });
+  const [newPassword, setNewPassword] = useState('');
+
   useEffect(() => {
     fetchData();
     fetchApplicants();
@@ -131,6 +146,7 @@ const AdminDashboard = () => {
     fetchScoringQueue();
     fetchThemeSettings();
     fetchEmailSettings();
+    checkFirstAdmin();
     loadSavedDrafts();
     
     // Poll for new notifications every 30 seconds
@@ -138,6 +154,14 @@ const AdminDashboard = () => {
     
     return () => clearInterval(notificationInterval);
   }, []);
+
+  // Separate useEffect for admin-related operations that depend on user
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      console.log('👤 User is admin, loading admin data...');
+      fetchAdmins();
+    }
+  }, [user]);
 
   // Refetch results when pagination or filters change
   useEffect(() => {
@@ -352,6 +376,96 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Failed to send test email:', error);
       toast.error('Failed to send test email: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  // Admin Management Functions
+  const checkFirstAdmin = async () => {
+    try {
+      console.log('🔍 Checking first admin status...');
+      const response = await axios.get(`${API}/admin/is-first-admin`);
+      console.log('📊 First admin response:', response.data);
+      setIsFirstAdmin(response.data.is_first_admin);
+      
+      if (response.data.is_first_admin) {
+        console.log(' Current user is the first admin');
+        console.log('👑 First admin details:', response.data.first_admin);
+      } else {
+        console.log('❌ Current user is NOT the first admin');
+      }
+    } catch (error) {
+      console.error('❌ Failed to check first admin status:', error);
+      console.error('Error details:', error.response?.data);
+    }
+  };
+
+  const fetchAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      console.log('🔍 Fetching admins list...');
+      const response = await axios.get(`${API}/admin/list-admins`);
+      console.log('📊 Admins response:', response.data);
+      setAdmins(response.data);
+      console.log('✅ Admins loaded successfully:', response.data.length, 'admins');
+    } catch (error) {
+      console.error('❌ Failed to fetch admins:', error);
+      console.error('Error details:', error.response?.data);
+      toast.error('Failed to load admins: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  const createAdmin = async () => {
+    if (!newAdminData.email || !newAdminData.password || !newAdminData.full_name) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/admin/create-admin`, newAdminData);
+      toast.success('Admin created successfully!');
+      setShowCreateAdminDialog(false);
+      setNewAdminData({ email: '', password: '', full_name: '' });
+      fetchAdmins();
+    } catch (error) {
+      console.error('Failed to create admin:', error);
+      toast.error('Failed to create admin: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const changeAdminPassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    try {
+      await axios.put(`${API}/admin/change-password/${selectedAdmin.id}`, {
+        new_password: newPassword
+      });
+      toast.success('Password changed successfully!');
+      setShowChangePasswordDialog(false);
+      setNewPassword('');
+      setSelectedAdmin(null);
+    } catch (error) {
+      console.error('Failed to change password:', error);
+      toast.error('Failed to change password: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const deleteAdmin = async (adminId, adminEmail) => {
+    if (!confirm(`Are you sure you want to delete admin ${adminEmail}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API}/admin/delete-admin/${adminId}`);
+      toast.success('Admin deleted successfully!');
+      fetchAdmins();
+    } catch (error) {
+      console.error('Failed to delete admin:', error);
+      toast.error('Failed to delete admin: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -1928,7 +2042,7 @@ const AdminDashboard = () => {
 
       {/* Create Test Modal */}
       {showCreateTest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold">Create New Test</h2>
@@ -2143,7 +2257,7 @@ const AdminDashboard = () => {
 
       {/* Auto Generate Test Dialog */}
       {showAutoGenerateDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold flex items-center">
@@ -2272,9 +2386,155 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* Create Admin Dialog */}
+      {showCreateAdminDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold flex items-center">
+                <Shield className="h-5 w-5 mr-2 text-green-600" />
+                Create New Admin
+              </h2>
+              <button
+                onClick={() => setShowCreateAdminDialog(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <Label htmlFor="admin-full-name">Full Name *</Label>
+                <Input
+                  id="admin-full-name"
+                  type="text"
+                  value={newAdminData.full_name}
+                  onChange={(e) => setNewAdminData({ ...newAdminData, full_name: e.target.value })}
+                  placeholder="Enter full name"
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="admin-email">Email *</Label>
+                <Input
+                  id="admin-email"
+                  type="email"
+                  value={newAdminData.email}
+                  onChange={(e) => setNewAdminData({ ...newAdminData, email: e.target.value })}
+                  placeholder="Enter email address"
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="admin-password">Password *</Label>
+                <Input
+                  id="admin-password"
+                  type="password"
+                  value={newAdminData.password}
+                  onChange={(e) => setNewAdminData({ ...newAdminData, password: e.target.value })}
+                  placeholder="Enter password (min 6 characters)"
+                  className="mt-1"
+                />
+                <p className="text-sm text-gray-500 mt-1">Minimum 6 characters required</p>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t bg-gray-50 rounded-b-lg">
+              <div className="flex space-x-3">
+                <Button
+                  onClick={() => setShowCreateAdminDialog(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={createAdmin}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Create Admin
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Dialog */}
+      {showChangePasswordDialog && selectedAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold flex items-center">
+                <Shield className="h-5 w-5 mr-2 text-blue-600" />
+                Change Password
+              </h2>
+              <button
+                onClick={() => {
+                  setShowChangePasswordDialog(false);
+                  setSelectedAdmin(null);
+                  setNewPassword('');
+                }}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Admin:</strong> {selectedAdmin.full_name} ({selectedAdmin.email})
+                </p>
+              </div>
+              
+              <div>
+                <Label htmlFor="new-password">New Password *</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password (min 6 characters)"
+                  className="mt-1"
+                />
+                <p className="text-sm text-gray-500 mt-1">Minimum 6 characters required</p>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t bg-gray-50 rounded-b-lg">
+              <div className="flex space-x-3">
+                <Button
+                  onClick={() => {
+                    setShowChangePasswordDialog(false);
+                    setSelectedAdmin(null);
+                    setNewPassword('');
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={changeAdminPassword}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Change Password
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Send Invite Modal */}
       {showSendInvite && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold">Send Test Invite</h2>
@@ -2514,11 +2774,11 @@ const AdminDashboard = () => {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-50 bg-black bg-opacity-50"
+            className="fixed inset-0 z-[100] bg-black bg-opacity-50"
             onClick={closeResultDetails}
           />
           {/* Modal Content */}
-          <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-4xl translate-x-[-50%] translate-y-[-50%] gap-4 border bg-white p-6 shadow-lg max-h-[80vh] overflow-hidden">
+          <div className="fixed left-[50%] top-[50%] z-[100] grid w-full max-w-4xl translate-x-[-50%] translate-y-[-50%] gap-4 border bg-white p-6 shadow-lg max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Test Result Details</h2>
@@ -2632,7 +2892,7 @@ const AdminDashboard = () => {
 
       {/* Edit Question Modal */}
       {showEditQuestion && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold">Edit Question</h2>
@@ -2783,7 +3043,7 @@ const AdminDashboard = () => {
 
       {/* Add Question to Edit Test Modal */}
       {showAddQuestionToEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold">Add Question to Test</h2>
@@ -2960,7 +3220,7 @@ const AdminDashboard = () => {
             {/* Content */}
             <div className="p-6">
               <Tabs defaultValue="applicants" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="applicants" className="flex items-center gap-2">
                     <Users className="h-4 w-4" />
                     Applicant Management
@@ -2973,6 +3233,12 @@ const AdminDashboard = () => {
                     <Settings className="h-4 w-4" />
                     Theme Settings
                   </TabsTrigger>
+                  {user?.role === 'admin' && (
+                    <TabsTrigger value="admin-management" className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Admin Management
+                    </TabsTrigger>
+                  )}
                 </TabsList>
 
                 {/* Applicant Management Tab */}
@@ -3299,6 +3565,152 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 </TabsContent>
+
+                {/* Admin Management Tab - Only visible to first admin */}
+                {user?.role === 'admin' && (
+                  <TabsContent value="admin-management" className="space-y-6 mt-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium">Admin Management</h3>
+                      <div className="flex space-x-2">
+                        <Button
+                          onClick={checkFirstAdmin}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Debug Status
+                        </Button>
+                        <Button
+                          onClick={fetchAdmins}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Load Admins
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            fetchAdmins();
+                            setShowCreateAdminDialog(true);
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          disabled={!isFirstAdmin}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create Admin
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start space-x-2">
+                        <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-blue-900">Superadmin Privileges</h4>
+                          <p className="text-sm text-blue-700 mt-1">
+                            As the superadmin, you have exclusive access to create, manage, and delete other admin accounts.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Debug Status */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Debug Information</h4>
+                      <div className="text-sm text-gray-700 space-y-1">
+                        <p><strong>Is Superadmin:</strong> {isFirstAdmin ? ' Yes' : '❌ No'}</p>
+                        <p><strong>Current User:</strong> {user?.email || 'Not loaded'}</p>
+                        <p><strong>User Role:</strong> {user?.role || 'Not loaded'}</p>
+                        <p><strong>User ID:</strong> {user?.id || 'Not loaded'}</p>
+                        <p><strong>Admins Count:</strong> {admins.length}</p>
+                        <p><strong>Admins State:</strong> {loadingAdmins ? 'Loading...' : (admins.length > 0 ? 'Loaded' : 'Empty')}</p>
+                      </div>
+                    </div>
+
+                    {/* Warning for non-first admins */}
+                    {!isFirstAdmin && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex items-start space-x-2">
+                          <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                          <div>
+                            <h4 className="font-medium text-red-900">Access Restricted</h4>
+                            <p className="text-sm text-red-700 mt-1">
+                              Only the superadmin can manage other admin accounts. You can view this tab for debugging purposes.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admins List */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium">Current Admins</h4>
+                      {loadingAdmins ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                          <p>Loading admins...</p>
+                        </div>
+                      ) : admins.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <Shield className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                          <p>No admins found. Click "Create Admin" to add the first admin.</p>
+                        </div>
+                      ) : (
+                        <div className="grid gap-4">
+                          {admins.map((admin) => (
+                            <Card key={admin.id} className="p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <Shield className="h-5 w-5 text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center space-x-2">
+                                      <h5 className="font-medium">{admin.full_name}</h5>
+                                      {admin.is_first_admin && (
+                                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                          Superadmin
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-600">{admin.email}</p>
+                                    <p className="text-xs text-gray-500">
+                                      Created: {new Date(admin.created_at).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  {!admin.is_first_admin && (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setSelectedAdmin(admin);
+                                          setShowChangePasswordDialog(true);
+                                        }}
+                                        disabled={!isFirstAdmin}
+                                      >
+                                        Change Password
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => deleteAdmin(admin.id, admin.email)}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        disabled={!isFirstAdmin}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                )}
               </Tabs>
             </div>
           </div>

@@ -106,10 +106,10 @@ The Auto Generate Test feature uses Google's Gemini AI to automatically create c
 ```
 
 ### **Validation**:
-- ✅ **Question count validation**: Ensures exact number requested
-- ✅ **Answer validation**: Correct answer must match one option
-- ✅ **Structure validation**: All required fields present
-- ✅ **Database integrity**: Transaction-safe insertion
+-  **Question count validation**: Ensures exact number requested
+-  **Answer validation**: Correct answer must match one option
+-  **Structure validation**: All required fields present
+-  **Database integrity**: Transaction-safe insertion
 
 ## 🛡️ **Security & Privacy**
 
@@ -157,8 +157,8 @@ The Auto Generate Test feature uses Google's Gemini AI to automatically create c
 4. **Keep API keys secure**: Don't share or expose them
 
 ### **Topic Guidelines**:
-- ✅ **Good**: "JavaScript Promises and Async/Await"
-- ✅ **Good**: "SQL JOIN Operations"
+-  **Good**: "JavaScript Promises and Async/Await"
+-  **Good**: "SQL JOIN Operations"
 - ❌ **Too broad**: "Programming"
 - ❌ **Too narrow**: "useState hook with boolean values"
 
