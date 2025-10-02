@@ -474,6 +474,97 @@ async def delete_test(test_id: str, admin: User = Depends(get_admin_user)):
 
         return {"message": f"Test '{test['title']}' has been deleted successfully"}
 
+@api_router.put("/tests/{test_id}", response_model=Test)
+async def update_test(test_id: str, test_update: TestCreate, admin: User = Depends(get_admin_user)):
+    """Update an existing test"""
+    async with db_pool.acquire() as conn:
+        # Check if test exists and belongs to the admin
+        existing_test = await conn.fetchrow("""
+            SELECT id, title FROM tests 
+            WHERE id = $1 AND created_by = $2 AND is_active = true
+        """, uuid.UUID(test_id), uuid.UUID(admin.id))
+        
+        if not existing_test:
+            raise HTTPException(status_code=404, detail="Test not found or you don't have permission to update it")
+        
+        # Check if there are any tests currently in progress (started but not completed)
+        in_progress_tests = await conn.fetchrow("""
+            SELECT COUNT(*) as count FROM test_invites
+            WHERE test_id = $1 AND status = 'in_progress'
+        """, uuid.UUID(test_id))
+
+        if in_progress_tests['count'] > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update test while someone is currently taking it. Please wait for all active test sessions to complete."
+            )
+        
+        # Update the test
+        updated_test = await conn.fetchrow("""
+            UPDATE tests 
+            SET title = $2, description = $3, duration_minutes = $4
+            WHERE id = $1
+            RETURNING id, title, description, duration_minutes, created_by, created_at, is_active
+        """, uuid.UUID(test_id), test_update.title, test_update.description, test_update.duration_minutes)
+        
+        # Delete existing questions for this test
+        await conn.execute("DELETE FROM questions WHERE test_id = $1", uuid.UUID(test_id))
+        
+        # Insert updated questions
+        for question in test_update.questions:
+            # Convert options list to JSON string if it's a list
+            options_json = None
+            if question.options:
+                if isinstance(question.options, list):
+                    options_json = json.dumps(question.options)
+                else:
+                    options_json = question.options
+            
+            question_id = await conn.fetchval("""
+                INSERT INTO questions (test_id, type, question, options, correct_answer, expected_language, points)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+            """, 
+            uuid.UUID(test_id),
+            question.type,
+            question.question,
+            options_json,
+            question.correct_answer,
+            question.expected_language,
+            question.points
+            )
+        
+        # Fetch updated questions
+        questions_rows = await conn.fetch("""
+            SELECT id, type, question, options, correct_answer, expected_language, points
+            FROM questions
+            WHERE test_id = $1
+            ORDER BY id
+        """, uuid.UUID(test_id))
+        
+        questions = [
+            Question(
+                id=str(row['id']),
+                type=row['type'],
+                question=row['question'],
+                options=json.loads(row['options']) if row['options'] else None,
+                correct_answer=row['correct_answer'],
+                expected_language=row['expected_language'],
+                points=row['points']
+            ) for row in questions_rows
+        ]
+        
+        return Test(
+            id=str(updated_test['id']),
+            title=updated_test['title'],
+            description=updated_test['description'],
+            duration_minutes=updated_test['duration_minutes'],
+            questions=questions,
+            created_by=str(updated_test['created_by']),
+            created_at=updated_test['created_at'],
+            is_active=updated_test['is_active']
+        )
+
 # Test Invitation Routes
 @api_router.post("/invites", response_model=TestInvite)
 async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depends(get_admin_user)):
