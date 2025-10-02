@@ -110,9 +110,9 @@ class ScheduleTest(BaseModel):
 
 class AutoGenerateTest(BaseModel):
     topic: str
-    questionCount: int
+    questionCount: int = 10
     geminiApiKey: str
-    level: str
+    level: str = "intermediate"
 
 class TestAnswer(BaseModel):
     question_id: str
@@ -230,12 +230,60 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
         )
     return current_user
 
-def send_email(to_email: str, subject: str, body: str):
+async def send_email(to_email: str, subject: str, body: str, admin_id: str = None):
     try:
-        # This is a placeholder - in a real app, you'd configure SMTP settings
-        print(f"EMAIL: To: {to_email}, Subject: {subject}")
-        print(f"Body: {body}")
-        return True
+        # Get email settings from database
+        async with db_pool.acquire() as conn:
+            if admin_id:
+                settings = await conn.fetchrow("""
+                    SELECT smtp_host, smtp_port, smtp_user, smtp_password, from_email, from_name
+                    FROM admin_email_settings 
+                    WHERE admin_id = $1
+                """, uuid.UUID(admin_id))
+            else:
+                # Get settings from any admin (fallback)
+                settings = await conn.fetchrow("""
+                    SELECT smtp_host, smtp_port, smtp_user, smtp_password, from_email, from_name
+                    FROM admin_email_settings 
+                    LIMIT 1
+                """)
+            
+            if not settings or not settings['smtp_host']:
+                print("No email settings configured")
+                return False
+            
+            # Create email message
+            msg = MIMEMultipart()
+            msg['From'] = f"{settings['from_name']} <{settings['from_email']}>"
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            
+            # Add body to email
+            msg.attach(MIMEText(body, 'html'))
+            
+            # Connect to SMTP server
+            server = smtplib.SMTP(settings['smtp_host'], settings['smtp_port'])
+            server.set_debuglevel(1)  # Enable debug output
+            server.starttls()  # Enable TLS encryption
+            
+            try:
+                server.login(settings['smtp_user'], settings['smtp_password'])
+            except smtplib.SMTPAuthenticationError as e:
+                print(f"SMTP Authentication failed: {e}")
+                print("Common solutions:")
+                print("1. Use App Password instead of regular password")
+                print("2. Enable SMTP AUTH in Office 365 admin center")
+                print("3. Try smtp-mail.outlook.com instead of smtp.office365.com")
+                raise e
+            
+            # Send email
+            text = msg.as_string()
+            server.sendmail(settings['from_email'], to_email, text)
+            server.quit()
+            
+            print(f"Email sent successfully to {to_email}")
+            return True
+            
     except Exception as e:
         print(f"Email sending failed: {e}")
         return False
@@ -899,7 +947,7 @@ async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depend
         Interview Team
         """
         
-        if not send_email(invite_create.applicant_email, f"Test Invitation: {test['title']}", email_body):
+        if not await send_email(invite_create.applicant_email, f"Test Invitation: {test['title']}", email_body, admin.id):
             # Rollback by deleting the invite
             await conn.execute("DELETE FROM test_invites WHERE id = $1", uuid.UUID(invite_id))
             raise HTTPException(status_code=500, detail="Failed to send email")
@@ -1332,6 +1380,7 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
 async def get_applicants(admin: User = Depends(get_admin_user)):
     """Get all applicants for admin management"""
     async with db_pool.acquire() as conn:
+        print(f"Fetching applicants for admin: {admin.id}")
         applicants = await conn.fetch("""
             SELECT id, email, full_name, created_at, is_active
             FROM users 
@@ -1339,7 +1388,8 @@ async def get_applicants(admin: User = Depends(get_admin_user)):
             ORDER BY created_at DESC
         """)
         
-        return [
+        print(f"Found {len(applicants)} applicants")
+        result = [
             {
                 "id": str(row['id']),
                 "email": row['email'],
@@ -1348,6 +1398,8 @@ async def get_applicants(admin: User = Depends(get_admin_user)):
                 "is_active": row['is_active']
             } for row in applicants
         ]
+        print(f"Returning applicants: {result}")
+        return result
 
 @api_router.put("/admin/applicants/{applicant_id}/status")
 async def update_applicant_status(
@@ -1513,6 +1565,41 @@ async def update_email_settings(
             )
         
         return {"message": "Email settings updated successfully"}
+
+@api_router.post("/admin/email-settings/test")
+async def test_email_settings(
+    test_email: dict,
+    admin: User = Depends(get_admin_user)
+):
+    """Test email configuration by sending a test email"""
+    try:
+        email_address = test_email.get('email')
+        if not email_address:
+            raise HTTPException(status_code=400, detail="Email address is required")
+        
+        # Send test email
+        subject = "Test Email - Interview Platform"
+        body = f"""
+        <html>
+        <body>
+            <h2>Test Email from Interview Platform</h2>
+            <p>This is a test email to verify your SMTP configuration.</p>
+            <p>If you received this email, your email settings are working correctly!</p>
+            <br>
+            <p>Sent at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+        </body>
+        </html>
+        """
+        
+        success = await send_email(email_address, subject, body, admin.id)
+        
+        if success:
+            return {"message": "Test email sent successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send test email. Please check your SMTP settings.")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email test failed: {str(e)}")
 
 @api_router.get("/admin/theme-settings")
 async def get_theme_settings(admin: User = Depends(get_admin_user)):
