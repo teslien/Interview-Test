@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from './App';
+import { toast } from 'sonner';
 
 const SimpleAdmin = () => {
   const { user, logout } = useAuth();
@@ -109,7 +110,7 @@ const SimpleAdmin = () => {
             gap: '16px'
           }}>
             <button
-              onClick={() => alert('Create Test functionality will be implemented!')}
+              onClick={() => toast.info('Create Test functionality will be implemented!')}
               style={{
                 padding: '16px',
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -125,7 +126,7 @@ const SimpleAdmin = () => {
             </button>
             
             <button
-              onClick={() => alert('Send Invite functionality will be implemented!')}
+              onClick={() => toast.info('Send Invite functionality will be implemented!')}
               style={{
                 padding: '16px',
                 background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
@@ -141,7 +142,7 @@ const SimpleAdmin = () => {
             </button>
             
             <button
-              onClick={() => alert('View Results functionality will be implemented!')}
+              onClick={() => toast.info('View Results functionality will be implemented!')}
               style={{
                 padding: '16px',
                 background: 'linear-gradient(135deg, #ed8936 0%, #dd6b20 100%)',
@@ -157,7 +158,7 @@ const SimpleAdmin = () => {
             </button>
             
             <button
-              onClick={() => alert('Monitor Tests functionality will be implemented!')}
+              onClick={() => toast.info('Monitor Tests functionality will be implemented!')}
               style={{
                 padding: '16px',
                 background: 'linear-gradient(135deg, #9f7aea 0%, #805ad5 100%)',

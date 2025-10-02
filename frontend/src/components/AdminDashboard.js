@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
-import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing } from 'lucide-react';
+import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing, CheckSquare, AlertCircle } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -27,6 +28,11 @@ const AdminDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [scoringQueue, setScoringQueue] = useState([]);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [submissionDetails, setSubmissionDetails] = useState(null);
+  const [scoringLoading, setScoringLoading] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, testId: null, testTitle: '' });
 
   // Dialog state for viewing result details
   const [selectedResult, setSelectedResult] = useState(null);
@@ -68,6 +74,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     fetchData();
     fetchNotifications();
+    fetchScoringQueue();
     
     // Poll for new notifications every 30 seconds
     const notificationInterval = setInterval(fetchNotifications, 30000);
@@ -101,7 +108,7 @@ const AdminDashboard = () => {
       setResults(resultsRes.data);
     } catch (error) {
       console.error('Failed to fetch data:', error);
-      alert('Failed to load dashboard data');
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -132,6 +139,42 @@ const AdminDashboard = () => {
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const fetchScoringQueue = async () => {
+    try {
+      const response = await axios.get(`${API}/admin/scoring-queue`);
+      setScoringQueue(response.data.submissions);
+    } catch (error) {
+      console.error('Failed to fetch scoring queue:', error);
+    }
+  };
+
+  const fetchSubmissionDetails = async (submissionId) => {
+    setScoringLoading(true);
+    try {
+      const response = await axios.get(`${API}/admin/scoring/${submissionId}`);
+      setSubmissionDetails(response.data);
+    } catch (error) {
+      console.error('Failed to fetch submission details:', error);
+      toast.error('Failed to load submission details');
+    } finally {
+      setScoringLoading(false);
+    }
+  };
+
+  const scoreAnswer = async (submissionId, answerId, scoreData) => {
+    try {
+      await axios.post(`${API}/admin/scoring/${submissionId}/answer/${answerId}`, scoreData);
+      toast.success('Answer scored successfully');
+      
+      // Refresh submission details and scoring queue
+      await fetchSubmissionDetails(submissionId);
+      await fetchScoringQueue();
+    } catch (error) {
+      console.error('Failed to score answer:', error);
+      toast.error('Failed to score answer');
     }
   };
 
@@ -253,16 +296,20 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteTest = async (testId, testTitle) => {
-    if (window.confirm(`Are you sure you want to delete "${testTitle}"? This action cannot be undone.`)) {
-      try {
-        await axios.delete(`${API}/tests/${testId}`);
-        toast.success('Test deleted successfully!');
-        fetchData();
-      } catch (error) {
-        console.error('Failed to delete test:', error);
-        toast.error('Failed to delete test: ' + (error.response?.data?.detail || error.message));
-      }
+  const handleDeleteTest = (testId, testTitle) => {
+    setDeleteDialog({ open: true, testId, testTitle });
+  };
+
+  const confirmDeleteTest = async () => {
+    try {
+      await axios.delete(`${API}/tests/${deleteDialog.testId}`);
+      toast.success('Test deleted successfully!');
+      fetchData();
+    } catch (error) {
+      console.error('Failed to delete test:', error);
+      toast.error('Failed to delete test: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setDeleteDialog({ open: false, testId: null, testTitle: '' });
     }
   };
 
@@ -408,7 +455,7 @@ const AdminDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-5">
             <TabsTrigger value="overview" className="flex items-center space-x-2">
               <Eye className="h-4 w-4" />
               <span>Overview</span>
@@ -424,6 +471,15 @@ const AdminDashboard = () => {
             <TabsTrigger value="results" className="flex items-center space-x-2">
               <Video className="h-4 w-4" />
               <span>Results</span>
+            </TabsTrigger>
+            <TabsTrigger value="scoring" className="flex items-center space-x-2 relative">
+              <CheckSquare className="h-4 w-4" />
+              <span>Scoring</span>
+              {scoringQueue.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {scoringQueue.length}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -725,8 +781,24 @@ const AdminDashboard = () => {
                         </p>
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold text-indigo-600">
-                          {result.score ? Math.round(result.score) : 0}%
+                        <div className="flex flex-col items-end space-y-1">
+                          <div className="text-2xl font-bold text-indigo-600">
+                            {result.score ? Math.round(result.score) : 0}%
+                          </div>
+                          <Badge 
+                            variant={
+                              result.scoring_status === 'auto_only' ? 'secondary' :
+                              result.scoring_status === 'needs_review' ? 'destructive' :
+                              result.scoring_status === 'partially_reviewed' ? 'default' :
+                              'outline'
+                            }
+                            className="text-xs"
+                          >
+                            {result.scoring_status === 'auto_only' ? 'Auto-scored' :
+                             result.scoring_status === 'needs_review' ? 'Needs Review' :
+                             result.scoring_status === 'partially_reviewed' ? 'Partial Review' :
+                             'Fully Reviewed'}
+                          </Badge>
                         </div>
                         <Button
                           size="sm"
@@ -749,6 +821,154 @@ const AdminDashboard = () => {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          {/* Scoring Tab */}
+          <TabsContent value="scoring" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Manual Scoring</h2>
+              <Button onClick={fetchScoringQueue} variant="outline" size="sm">
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Refresh Queue
+              </Button>
+            </div>
+
+            {!selectedSubmission ? (
+              // Scoring Queue View
+              <div className="space-y-4">
+                {scoringQueue.length === 0 ? (
+                  <Card className="glass-effect border-0 shadow-lg">
+                    <CardContent className="p-8 text-center">
+                      <CheckSquare className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">All Caught Up!</h3>
+                      <p className="text-gray-600">No submissions need manual scoring at the moment.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {scoringQueue.map((submission) => (
+                      <Card key={submission.submission_id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300">
+                        <CardContent className="p-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <h3 className="font-semibold text-gray-900">{submission.test_title}</h3>
+                                <Badge variant={submission.scoring_status === 'needs_review' ? 'destructive' : 'secondary'}>
+                                  {submission.scoring_status === 'needs_review' ? 'New' : 'Partial'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-gray-600 mb-1">
+                                Applicant: {submission.applicant_email}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                Submitted: {new Date(submission.submitted_at).toLocaleString()}
+                              </p>
+                              <div className="flex items-center space-x-4 mt-2 text-sm">
+                                <span className="text-blue-600">
+                                  {submission.manual_questions} manual questions
+                                </span>
+                                <span className="text-orange-600">
+                                  {submission.pending_reviews} pending reviews
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={() => {
+                                setSelectedSubmission(submission.submission_id);
+                                fetchSubmissionDetails(submission.submission_id);
+                              }}
+                              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
+                            >
+                              Review & Score
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Submission Scoring View
+              <div className="space-y-6">
+                <div className="flex items-center space-x-4">
+                  <Button
+                    onClick={() => {
+                      setSelectedSubmission(null);
+                      setSubmissionDetails(null);
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    ← Back to Queue
+                  </Button>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {submissionDetails?.submission?.test_title}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      {submissionDetails?.submission?.applicant_email}
+                    </p>
+                  </div>
+                </div>
+
+                {scoringLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                    <p className="text-gray-600 mt-2">Loading submission details...</p>
+                  </div>
+                ) : submissionDetails ? (
+                  <div className="space-y-6">
+                    {/* Score Summary */}
+                    <Card className="glass-effect border-0 shadow-lg">
+                      <CardHeader>
+                        <CardTitle>Score Summary</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                          <div>
+                            <p className="text-sm text-gray-600">Auto Score</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {submissionDetails.submission.auto_score?.toFixed(1) || 0}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Manual Score</p>
+                            <p className="text-2xl font-bold text-orange-600">
+                              {submissionDetails.submission.manual_score?.toFixed(1) || 'Pending'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Final Score</p>
+                            <p className="text-2xl font-bold text-green-600">
+                              {submissionDetails.submission.final_score?.toFixed(1) || 0}%
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Answers for Scoring */}
+                    <div className="space-y-4">
+                      {submissionDetails.answers
+                        .filter(answer => ['essay', 'coding'].includes(answer.question_type))
+                        .map((answer) => (
+                          <ScoringAnswerCard
+                            key={answer.id}
+                            answer={answer}
+                            submissionId={selectedSubmission}
+                            onScore={scoreAnswer}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    Failed to load submission details
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -1233,7 +1453,176 @@ const AdminDashboard = () => {
           </div>
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Test</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteDialog.testTitle}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteDialog({ open: false, testId: null, testTitle: '' })}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteTest} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+};
+
+// Scoring Answer Card Component
+const ScoringAnswerCard = ({ answer, submissionId, onScore }) => {
+  const [selectedScore, setSelectedScore] = useState(answer.manual_score || 0);
+  const [scoreStatus, setScoreStatus] = useState(answer.manual_score_status || 'pending');
+  const [comments, setComments] = useState(answer.review_comments || '');
+  const [isScoring, setIsScoring] = useState(false);
+
+  const handleScore = async (status) => {
+    setIsScoring(true);
+    try {
+      let score = 0;
+      if (status === 'correct') {
+        score = answer.points;
+      } else if (status === 'partial') {
+        score = selectedScore;
+      } else {
+        score = 0;
+      }
+
+      await onScore(submissionId, answer.id, {
+        score_status: status,
+        manual_score: score,
+        comments: comments
+      });
+
+      setScoreStatus(status);
+    } catch (error) {
+      console.error('Failed to score answer:', error);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'correct': return 'bg-green-100 text-green-800 border-green-200';
+      case 'wrong': return 'bg-red-100 text-red-800 border-red-200';
+      case 'partial': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  return (
+    <Card className="glass-effect border-0 shadow-lg">
+      <CardHeader>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <CardTitle className="text-lg">{answer.question}</CardTitle>
+            <div className="flex items-center space-x-4 mt-2">
+              <Badge variant="outline" className="text-xs">
+                {answer.question_type.toUpperCase()}
+              </Badge>
+              <span className="text-sm text-gray-600">
+                {answer.points} points
+              </span>
+              {answer.expected_language && (
+                <Badge variant="secondary" className="text-xs">
+                  {answer.expected_language}
+                </Badge>
+              )}
+            </div>
+          </div>
+          <Badge className={`${getStatusColor(scoreStatus)} border`}>
+            {scoreStatus === 'pending' ? 'Not Scored' : 
+             scoreStatus === 'correct' ? 'Correct' :
+             scoreStatus === 'wrong' ? 'Wrong' : 'Partial'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Answer Display */}
+        <div>
+          <Label className="text-sm font-medium text-gray-700">Applicant's Answer:</Label>
+          <div className="mt-2 p-4 bg-gray-50 rounded-lg border">
+            <pre className="whitespace-pre-wrap text-sm font-mono text-gray-900">
+              {answer.answer}
+            </pre>
+          </div>
+        </div>
+
+        {/* Scoring Controls */}
+        <div className="border-t pt-4">
+          <Label className="text-sm font-medium text-gray-700 mb-3 block">Score this answer:</Label>
+          
+          <div className="flex flex-wrap gap-3 mb-4">
+            <Button
+              onClick={() => handleScore('correct')}
+              disabled={isScoring}
+              variant={scoreStatus === 'correct' ? 'default' : 'outline'}
+              className={`${scoreStatus === 'correct' ? 'bg-green-600 hover:bg-green-700' : 'hover:bg-green-50 hover:border-green-300'}`}
+            >
+              ✓ Correct ({answer.points} pts)
+            </Button>
+            
+            <Button
+              onClick={() => handleScore('wrong')}
+              disabled={isScoring}
+              variant={scoreStatus === 'wrong' ? 'default' : 'outline'}
+              className={`${scoreStatus === 'wrong' ? 'bg-red-600 hover:bg-red-700' : 'hover:bg-red-50 hover:border-red-300'}`}
+            >
+              ✗ Wrong (0 pts)
+            </Button>
+            
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => handleScore('partial')}
+                disabled={isScoring}
+                variant={scoreStatus === 'partial' ? 'default' : 'outline'}
+                className={`${scoreStatus === 'partial' ? 'bg-yellow-600 hover:bg-yellow-700' : 'hover:bg-yellow-50 hover:border-yellow-300'}`}
+              >
+                ⚠ Partial
+              </Button>
+              <Input
+                type="number"
+                min="0"
+                max={answer.points}
+                step="0.5"
+                value={selectedScore}
+                onChange={(e) => setSelectedScore(parseFloat(e.target.value) || 0)}
+                className="w-20"
+                placeholder="0"
+              />
+              <span className="text-sm text-gray-600">/ {answer.points} pts</span>
+            </div>
+          </div>
+
+          {/* Comments */}
+          <div>
+            <Label className="text-sm font-medium text-gray-700">Comments (optional):</Label>
+            <Textarea
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder="Add feedback for the applicant..."
+              className="mt-2"
+              rows={2}
+            />
+          </div>
+
+          {answer.reviewed_at && (
+            <div className="text-xs text-gray-500 mt-2">
+              Last reviewed: {new Date(answer.reviewed_at).toLocaleString()}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

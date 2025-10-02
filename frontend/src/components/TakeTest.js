@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Clock, Camera, Mic, AlertTriangle, Send, Code } from 'lucide-react';
-// Removed toast import
+import { toast } from 'sonner';
 
 // WebRTC Configuration
 const RTC_CONFIGURATION = {
@@ -98,7 +98,7 @@ const TakeTest = () => {
       await initializeWebRTCSession(response.data.invite.id);
     } catch (error) {
       console.error('Failed to fetch test details:', error);
-      alert('Unable to load test. Error: ' + (error.response?.data?.detail || error.message));
+      toast.error('Unable to load test. Error: ' + (error.response?.data?.detail || error.message));
       navigate('/');
     } finally {
       setLoading(false);
@@ -204,7 +204,7 @@ const TakeTest = () => {
       return true;
     } catch (error) {
       console.error('Failed to start video and WebRTC:', error);
-      alert('Camera access and WebRTC setup failed. Please check your camera permissions.');
+      toast.error('Camera access and WebRTC setup failed. Please check your camera permissions.');
       return false;
     }
   };
@@ -271,7 +271,7 @@ const TakeTest = () => {
       }
     } catch (error) {
       console.error('Failed to start test:', error);
-      alert('Failed to start test: ' + (error.response?.data?.detail || error.message));
+      toast.error('Failed to start test: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -299,7 +299,7 @@ const TakeTest = () => {
         await axios.post(`${API}/webrtc/end-session/${inviteId}`);
       }
 
-      alert('Test submitted successfully!');
+      toast.success('Test submitted successfully!');
 
       // Stop video stream and close peer connection
       if (videoStream) {
@@ -312,7 +312,7 @@ const TakeTest = () => {
       navigate('/login');
     } catch (error) {
       console.error('Failed to submit test:', error);
-      alert('Failed to submit test');
+      toast.error('Failed to submit test');
     } finally {
       setSubmitting(false);
     }

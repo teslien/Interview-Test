@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 
 // WebRTC Configuration
 const RTC_CONFIGURATION = {
@@ -33,6 +34,7 @@ const WorkingTakeTest = () => {
   const [inviteId, setInviteId] = useState(null);
   const [peerConnection, setPeerConnection] = useState(null);
   const [webrtcConnected, setWebrtcConnected] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null });
 
   useEffect(() => {
     fetchTestDetails();
@@ -292,13 +294,16 @@ const WorkingTakeTest = () => {
         setTestStarted(true);
         toast.success('Test started! Video monitoring enabled.');
       } else {
-        const proceedWithoutVideo = window.confirm(
-          'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?'
-        );
-        if (proceedWithoutVideo) {
-          setTestStarted(true);
-          toast.info('Test started without video monitoring (testing mode).');
-        }
+        setConfirmDialog({
+          open: true,
+          title: 'Camera Access Denied',
+          message: 'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?',
+          onConfirm: () => {
+            setTestStarted(true);
+            toast.info('Test started without video monitoring (testing mode).');
+            setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+          }
+        });
       }
     } catch (error) {
       console.error('Failed to start test:', error);
@@ -309,14 +314,15 @@ const WorkingTakeTest = () => {
         toast.error(error.response.data.detail, { duration: 8000 });
         
         // Show additional help dialog
-        const shouldContactAdmin = window.confirm(
-          error.response.data.detail + '\n\nWould you like to contact the administrator for help?'
-        );
-        
-        if (shouldContactAdmin) {
-          // You could redirect to a contact page or show contact info
-          toast.info('Please contact your administrator to reset your previous test.');
-        }
+        setConfirmDialog({
+          open: true,
+          title: 'Test Already In Progress',
+          message: error.response.data.detail + '\n\nWould you like to contact the administrator for help?',
+          onConfirm: () => {
+            toast.info('Please contact your administrator to reset your previous test.');
+            setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+          }
+        });
       } else {
         toast.error('Failed to start test: ' + (error.response?.data?.detail || error.message));
       }
@@ -791,6 +797,26 @@ const WorkingTakeTest = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {confirmDialog.message}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDialog.onConfirm}>
+              Proceed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

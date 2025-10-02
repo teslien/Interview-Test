@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +59,7 @@ const ApplicantDashboard = () => {
       setCompletedTests([]);
       
       // Show error message to user
-      alert('Unable to load your test invitations. Error: ' + (error.response?.data?.detail || error.message) + ' Please contact support if this issue persists.');
+      toast.error('Unable to load your test invitations. Error: ' + (error.response?.data?.detail || error.message) + ' Please contact support if this issue persists.');
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ const ApplicantDashboard = () => {
     const { canStart, reason } = canStartTest(test, index);
     
     if (!canStart) {
-      alert(reason + '. Please complete your tests in order.');
+      toast.error(reason + '. Please complete your tests in order.');
       return;
     }
     
@@ -103,7 +104,7 @@ const ApplicantDashboard = () => {
       // Navigate to test taking page with token
       navigate(`/take-test/${token}`);
     } else {
-      alert('Test token not available. Please contact administrator.');
+      toast.error('Test token not available. Please contact administrator.');
     }
   };
 

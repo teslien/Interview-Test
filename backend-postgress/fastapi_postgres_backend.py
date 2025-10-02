@@ -798,45 +798,82 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         if not test:
             raise HTTPException(status_code=404, detail="Test not found")
 
-        # Calculate score for multiple choice questions
-        score = 0
-        total_points = 0
+        # Calculate score for multiple choice questions only
+        auto_score = 0
+        total_auto_points = 0
+        total_manual_points = 0
+        has_manual_questions = False
 
         # Get all questions for this test
         question_rows = await conn.fetch("""
-            SELECT id, points, correct_answer FROM questions WHERE test_id = $1
+            SELECT id, type, points, correct_answer FROM questions WHERE test_id = $1
         """, invite['test_id'])
 
         for question in question_rows:
-            total_points += question['points']
-            if question['correct_answer']:
-                for answer in submission.answers:
-                    if answer.question_id == str(question['id']) and answer.answer == question['correct_answer']:
-                        score += question['points']
+            if question['type'] == 'multiple_choice':
+                total_auto_points += question['points']
+                if question['correct_answer']:
+                    for answer in submission.answers:
+                        if answer.question_id == str(question['id']) and answer.answer == question['correct_answer']:
+                            auto_score += question['points']
+            elif question['type'] in ['essay', 'coding']:
+                total_manual_points += question['points']
+                has_manual_questions = True
 
-        calculated_score = (score / total_points * 100) if total_points > 0 else 0
+        # Calculate auto score percentage
+        auto_score_percentage = (auto_score / total_auto_points * 100) if total_auto_points > 0 else 0
+        
+        # Determine scoring status and final score
+        if has_manual_questions:
+            scoring_status = 'needs_review'
+            if total_auto_points > 0:
+                # Mixed test (MCQ + SA/Coding): show auto score until manual review complete
+                final_score = auto_score_percentage
+            else:
+                # SA/Coding only test: show 0 until manual review complete
+                final_score = 0.0
+        else:
+            # MCQ only test: auto-scored
+            scoring_status = 'auto_only'
+            final_score = auto_score_percentage
 
         # Insert submission
         submission_id = str(uuid.uuid4())
         await conn.execute("""
-            INSERT INTO test_submissions (id, invite_id, test_id, applicant_email, score, started_at, submitted_at, is_monitored)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO test_submissions (id, invite_id, test_id, applicant_email, auto_score, final_score, scoring_status, started_at, submitted_at, is_monitored)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """, uuid.UUID(submission_id), invite['id'], invite['test_id'],
-            invite['applicant_email'], calculated_score, invite.get('started_at'), datetime.now(timezone.utc), False)
+            invite['applicant_email'], auto_score_percentage, final_score, scoring_status, invite.get('started_at'), datetime.now(timezone.utc), False)
 
-        # Insert answers
+        # Insert answers with manual scoring status
         for answer in submission.answers:
+            # Find question type to set appropriate manual scoring status
+            question_type = None
+            for q in question_rows:
+                if str(q['id']) == answer.question_id:
+                    question_type = q['type']
+                    break
+            
+            # Set manual scoring status based on question type
+            manual_status = 'pending' if question_type in ['essay', 'coding'] else None
+            
             await conn.execute("""
-                INSERT INTO test_answers (submission_id, question_id, answer)
-                VALUES ($1, $2, $3)
-            """, uuid.UUID(submission_id), uuid.UUID(answer.question_id), answer.answer)
+                INSERT INTO test_answers (submission_id, question_id, answer, manual_score_status)
+                VALUES ($1, $2, $3, $4)
+            """, uuid.UUID(submission_id), uuid.UUID(answer.question_id), answer.answer, manual_status)
 
         # Update invite status
         await conn.execute("""
             UPDATE test_invites SET status = 'completed' WHERE invite_token = $1
         """, token)
 
-        return {"message": "Test submitted successfully", "score": calculated_score}
+        return {
+            "message": "Test submitted successfully", 
+            "auto_score": auto_score_percentage,
+            "final_score": final_score,
+            "scoring_status": scoring_status,
+            "needs_manual_review": has_manual_questions
+        }
 
 # Results Routes
 @api_router.get("/results", response_model=List[Dict[str, Any]])
@@ -847,7 +884,8 @@ async def get_results(admin: User = Depends(get_admin_user)):
         submission_rows = await conn.fetch("""
             SELECT
                 ts.id, ts.invite_id, ts.test_id, ts.applicant_email, ts.started_at,
-                ts.submitted_at, ts.score, ts.is_monitored,
+                ts.submitted_at, ts.final_score as score, ts.auto_score, ts.manual_score, 
+                ts.scoring_status, ts.is_monitored,
                 ti.applicant_name, t.title as test_title, t.duration_minutes
             FROM test_submissions ts
             JOIN test_invites ti ON ts.invite_id = ti.id
@@ -864,6 +902,9 @@ async def get_results(admin: User = Depends(get_admin_user)):
                 "test_title": row['test_title'],
                 "test_duration_minutes": row['duration_minutes'],
                 "score": row['score'],
+                "auto_score": row['auto_score'],
+                "manual_score": row['manual_score'],
+                "scoring_status": row['scoring_status'],
                 "submitted_at": row['submitted_at'],
                 "started_at": row['started_at'],
                 "is_monitored": row['is_monitored']
@@ -877,7 +918,8 @@ async def get_result_details(submission_id: str, admin: User = Depends(get_admin
         submission = await conn.fetchrow("""
             SELECT
                 ts.id, ts.invite_id, ts.test_id, ts.applicant_email, ts.started_at,
-                ts.submitted_at, ts.score, ts.is_monitored,
+                ts.submitted_at, ts.final_score as score, ts.auto_score, ts.manual_score,
+                ts.scoring_status, ts.is_monitored,
                 ti.applicant_name, t.title as test_title, t.duration_minutes
             FROM test_submissions ts
             JOIN test_invites ti ON ts.invite_id = ti.id
@@ -1086,6 +1128,204 @@ async def get_unread_notifications_count(current_user: User = Depends(get_curren
         """, uuid.UUID(current_user.id))
         
         return {"unread_count": count}
+
+# Manual Scoring Routes
+@api_router.get("/admin/scoring-queue")
+async def get_scoring_queue(current_user: User = Depends(get_current_user)):
+    """Get submissions that need manual scoring"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        submissions = await conn.fetch("""
+            SELECT * FROM manual_scoring_queue
+            WHERE pending_reviews > 0
+        """)
+        
+        return {
+            "submissions": [
+                {
+                    "submission_id": str(s['submission_id']),
+                    "applicant_email": s['applicant_email'],
+                    "test_title": s['test_title'],
+                    "test_id": str(s['test_id']),
+                    "submitted_at": s['submitted_at'].isoformat(),
+                    "scoring_status": s['scoring_status'],
+                    "total_answers": s['total_answers'],
+                    "manual_questions": s['manual_questions'],
+                    "pending_reviews": s['pending_reviews']
+                }
+                for s in submissions
+            ]
+        }
+
+@api_router.get("/admin/scoring/{submission_id}")
+async def get_submission_for_scoring(submission_id: str, current_user: User = Depends(get_current_user)):
+    """Get detailed submission data for manual scoring"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        # Get submission details
+        submission = await conn.fetchrow("""
+            SELECT ts.*, t.title as test_title, t.description as test_description
+            FROM test_submissions ts
+            JOIN tests t ON ts.test_id = t.id
+            WHERE ts.id = $1
+        """, uuid.UUID(submission_id))
+        
+        if not submission:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        
+        # Get answers with questions
+        answers = await conn.fetch("""
+            SELECT ta.*, q.question, q.type, q.points, q.expected_language
+            FROM test_answers ta
+            JOIN questions q ON ta.question_id = q.id
+            WHERE ta.submission_id = $1
+            ORDER BY q.question_order
+        """, uuid.UUID(submission_id))
+        
+        return {
+            "submission": {
+                "id": str(submission['id']),
+                "applicant_email": submission['applicant_email'],
+                "test_title": submission['test_title'],
+                "test_description": submission['test_description'],
+                "submitted_at": submission['submitted_at'].isoformat(),
+                "auto_score": submission['auto_score'],
+                "manual_score": submission['manual_score'],
+                "final_score": submission['final_score'],
+                "scoring_status": submission['scoring_status']
+            },
+            "answers": [
+                {
+                    "id": str(a['id']),
+                    "question_id": str(a['question_id']),
+                    "question": a['question'],
+                    "question_type": a['type'],
+                    "points": a['points'],
+                    "expected_language": a['expected_language'],
+                    "answer": a['answer'],
+                    "manual_score": a['manual_score'],
+                    "manual_score_status": a['manual_score_status'],
+                    "review_comments": a['review_comments'],
+                    "reviewed_at": a['reviewed_at'].isoformat() if a['reviewed_at'] else None
+                }
+                for a in answers
+            ]
+        }
+
+@api_router.post("/admin/scoring/{submission_id}/answer/{answer_id}")
+async def score_answer(
+    submission_id: str, 
+    answer_id: str, 
+    score_data: Dict[str, Any],
+    current_user: User = Depends(get_current_user)
+):
+    """Score a specific answer manually"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    required_fields = ['score_status', 'manual_score']
+    for field in required_fields:
+        if field not in score_data:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+    
+    async with db_pool.acquire() as conn:
+        # Update the answer with manual score
+        await conn.execute("""
+            UPDATE test_answers
+            SET manual_score = $1, 
+                manual_score_status = $2,
+                review_comments = $3,
+                reviewer_id = $4,
+                reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = $5 AND submission_id = $6
+        """, 
+        score_data['manual_score'],
+        score_data['score_status'],
+        score_data.get('comments', ''),
+        uuid.UUID(current_user.id),
+        uuid.UUID(answer_id),
+        uuid.UUID(submission_id))
+        
+        # Check if all manual questions are scored
+        pending_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM test_answers ta
+            JOIN questions q ON ta.question_id = q.id
+            WHERE ta.submission_id = $1 
+            AND q.type IN ('essay', 'coding')
+            AND ta.manual_score_status = 'pending'
+        """, uuid.UUID(submission_id))
+        
+        # Update submission scoring status
+        if pending_count == 0:
+            # All manual questions scored - calculate final score
+            await recalculate_final_score(conn, submission_id, current_user.id)
+        else:
+            # Still has pending reviews
+            await conn.execute("""
+                UPDATE test_submissions
+                SET scoring_status = 'partially_reviewed'
+                WHERE id = $1
+            """, uuid.UUID(submission_id))
+        
+        return {"message": "Answer scored successfully"}
+
+async def recalculate_final_score(conn, submission_id: str, reviewer_id: str):
+    """Recalculate final score after all manual scoring is complete"""
+    # Get auto score and manual scores
+    submission = await conn.fetchrow("""
+        SELECT auto_score FROM test_submissions WHERE id = $1
+    """, uuid.UUID(submission_id))
+    
+    # Get all manual scores
+    manual_scores = await conn.fetch("""
+        SELECT ta.manual_score, q.points
+        FROM test_answers ta
+        JOIN questions q ON ta.question_id = q.id
+        WHERE ta.submission_id = $1 AND q.type IN ('essay', 'coding')
+    """, uuid.UUID(submission_id))
+    
+    # Calculate total manual score
+    total_manual_score = sum(score['manual_score'] or 0 for score in manual_scores)
+    total_manual_points = sum(score['points'] for score in manual_scores)
+    
+    # Get total auto points
+    total_auto_points = await conn.fetchval("""
+        SELECT SUM(q.points) FROM questions q
+        JOIN test_answers ta ON q.id = ta.question_id
+        WHERE ta.submission_id = $1 AND q.type = 'multiple_choice'
+    """, uuid.UUID(submission_id)) or 0
+    
+    # Calculate final score based on test type
+    total_points = total_auto_points + total_manual_points
+    
+    if total_points > 0:
+        if total_auto_points > 0 and total_manual_points > 0:
+            # Mixed test: weighted average of auto and manual scores
+            auto_contribution = (submission['auto_score'] / 100) * total_auto_points
+            final_score = ((auto_contribution + total_manual_score) / total_points) * 100
+        elif total_manual_points > 0:
+            # Manual-only test: percentage based on manual score
+            final_score = (total_manual_score / total_manual_points) * 100
+        else:
+            # Auto-only test: use auto score
+            final_score = submission['auto_score'] or 0
+    else:
+        final_score = 0
+    
+    # Update submission
+    await conn.execute("""
+        UPDATE test_submissions
+        SET manual_score = $1,
+            final_score = $2,
+            scoring_status = 'fully_reviewed',
+            reviewed_by = $3,
+            review_completed_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+    """, total_manual_score, final_score, uuid.UUID(reviewer_id), uuid.UUID(submission_id))
 
 @api_router.post("/webrtc/ice-candidate")
 async def handle_ice_candidate(data: Dict[str, Any]):

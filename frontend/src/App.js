@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 
 // Components
@@ -70,12 +71,12 @@ const AuthProvider = ({ children }) => {
       setUser(userData);
       
       console.log('User set to:', userData);
-      alert('Login successful!');
+      toast.success('Login successful!');
       return userData;
     } catch (error) {
       console.error('Login error:', error);
       const message = error.response?.data?.detail || 'Login failed';
-      alert('Login failed: ' + message);
+      toast.error('Login failed: ' + message);
       throw error;
     }
   };
@@ -91,11 +92,11 @@ const AuthProvider = ({ children }) => {
         role
       });
       
-      alert('Registration successful! Please login.');
+      toast.success('Registration successful! Please login.');
     } catch (error) {
       console.error('Registration error:', error);
       const message = error.response?.data?.detail || 'Registration failed';
-      alert('Registration failed: ' + message);
+      toast.error('Registration failed: ' + message);
       throw error;
     }
   };
@@ -104,7 +105,7 @@ const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
-    alert('Logged out successfully');
+    toast.success('Logged out successfully');
   };
 
   const value = {

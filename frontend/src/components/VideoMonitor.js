@@ -47,12 +47,12 @@ const VideoMonitor = () => {
       // For now, we'll simulate the connection
       setTimeout(() => {
         setConnectionStatus('connected');
-        alert('Connected to applicant video feed');
+        toast.success('Connected to applicant video feed');
       }, 2000);
       
     } catch (error) {
       console.error('Failed to initialize video call:', error);
-      alert('Failed to access camera/microphone');
+      toast.error('Failed to access camera/microphone');
       setConnectionStatus('failed');
     }
   };

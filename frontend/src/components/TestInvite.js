@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar } from '@/components/ui/calendar';
@@ -40,7 +41,7 @@ const TestInvite = () => {
       }
     } catch (error) {
       console.error('Failed to fetch invite details:', error);
-      alert('Invalid or expired invite link');
+      toast.error('Invalid or expired invite link');
     } finally {
       setLoading(false);
     }
@@ -48,7 +49,7 @@ const TestInvite = () => {
 
   const handleSchedule = async () => {
     if (!selectedDate || !selectedTime) {
-      alert('Please select both date and time');
+      toast.error('Please select both date and time');
       return;
     }
 
@@ -62,7 +63,7 @@ const TestInvite = () => {
         scheduled_date: scheduledDateTime.toISOString()
       });
 
-      alert('Test scheduled successfully!');
+      toast.success('Test scheduled successfully!');
       setStep('confirmed');
       
       // Update invite status
@@ -73,7 +74,7 @@ const TestInvite = () => {
       }));
     } catch (error) {
       console.error('Failed to schedule test:', error);
-      alert('Failed to schedule test');
+      toast.error('Failed to schedule test');
     } finally {
       setScheduling(false);
     }

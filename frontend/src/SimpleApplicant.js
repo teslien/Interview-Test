@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from './App';
+import { toast } from 'sonner';
 
 const SimpleApplicant = () => {
   const { user, logout } = useAuth();
@@ -130,7 +131,7 @@ const SimpleApplicant = () => {
                 Scheduled for: Tomorrow, 2:00 PM • Duration: 90 minutes
               </p>
               <button
-                onClick={() => alert('Take Test functionality will be implemented!')}
+                onClick={() => toast.info('Take Test functionality will be implemented!')}
                 style={{
                   padding: '8px 16px',
                   background: 'linear-gradient(135deg, #4299e1 0%, #3182ce 100%)',
@@ -172,7 +173,7 @@ const SimpleApplicant = () => {
                 Completed: Last week • Score: 85/100
               </p>
               <button
-                onClick={() => alert('View Results functionality will be implemented!')}
+                onClick={() => toast.info('View Results functionality will be implemented!')}
                 style={{
                   padding: '8px 16px',
                   background: '#48bb78',

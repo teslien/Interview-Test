@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const DebugTakeTest = () => {
   const { token } = useParams();
 
   useEffect(() => {
     console.log('DebugTakeTest component loaded with token:', token);
-    alert('DebugTakeTest component loaded with token: ' + token);
+    toast.info('DebugTakeTest component loaded with token: ' + token);
   }, [token]);
 
   return (
