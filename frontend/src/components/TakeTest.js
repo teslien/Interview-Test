@@ -78,6 +78,14 @@ const TakeTest = () => {
     }
   }, [testStarted, timeLeft]);
 
+  // Set monitoring video stream when videoStream changes
+  useEffect(() => {
+    if (monitoringVideoRef.current && videoStream) {
+      monitoringVideoRef.current.srcObject = videoStream;
+      monitoringVideoRef.current.play().catch(e => console.error('Monitoring video play failed:', e));
+    }
+  }, [videoStream]);
+
   const fetchTestDetails = async () => {
     try {
       const response = await axios.get(`${API}/take-test/${token}`);
@@ -260,11 +268,6 @@ const TakeTest = () => {
       const videoStarted = await startVideoAndWebRTC();
       if (videoStarted) {
         setTestStarted(true);
-        // Set the local stream to monitoring video for self-view during test
-        if (monitoringVideoRef.current && videoStream) {
-          monitoringVideoRef.current.srcObject = videoStream;
-          monitoringVideoRef.current.play().catch(e => console.error('Monitoring video play failed:', e));
-        }
       }
     } catch (error) {
       console.error('Failed to start test:', error);
@@ -356,12 +359,14 @@ const TakeTest = () => {
                   playsInline
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-white text-center">
-                    <Camera className="h-12 w-12 mx-auto mb-2" />
-                    <p>Camera preview will appear here</p>
+                {!videoStream && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-white text-center">
+                      <Camera className="h-12 w-12 mx-auto mb-2" />
+                      <p>Camera preview will appear here</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Instructions */}
@@ -456,22 +461,32 @@ const TakeTest = () => {
               </div>
 
               {/* Video Monitor */}
-              <div className="w-32 h-24 bg-gray-900 rounded-lg overflow-hidden relative">
-                <video
-                  ref={monitoringVideoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-1 right-1">
-                  <div className="flex space-x-1">
-                    <div className={`w-2 h-2 rounded-full animate-pulse ${
-                      connectionStatus === 'connected' ? 'bg-green-400' : 'bg-red-400'
-                    }`}></div>
-                    <Mic className="h-3 w-3 text-white" />
+              <div className="flex flex-col items-center space-y-1">
+                <div className="w-32 h-24 bg-gray-900 rounded-lg overflow-hidden relative">
+                  <video
+                    ref={monitoringVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-1 right-1">
+                    <div className="flex space-x-1">
+                      <div className={`w-2 h-2 rounded-full animate-pulse ${
+                        connectionStatus === 'connected' ? 'bg-green-400' : 'bg-red-400'
+                      }`}></div>
+                      <Mic className="h-3 w-3 text-white" />
+                    </div>
                   </div>
+                  {!videoStream && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Camera className="h-6 w-6 text-gray-400" />
+                    </div>
+                  )}
                 </div>
+                <span className="text-xs text-gray-500">
+                  {videoStream ? 'Camera Active' : 'No Camera'}
+                </span>
               </div>
             </div>
           </div>

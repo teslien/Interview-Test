@@ -116,6 +116,28 @@ class TestSubmission(BaseModel):
 class TestSubmissionCreate(BaseModel):
     answers: List[TestAnswer]
 
+# Helper functions
+async def create_admin_notification(conn, notification_data):
+    """Create a notification for all admin users"""
+    try:
+        # Get all admin users
+        admin_users = await conn.fetch("SELECT id FROM users WHERE role = 'admin'")
+        
+        # Create notification for each admin
+        for admin in admin_users:
+            await conn.execute("""
+                INSERT INTO admin_notifications (type, message, data, admin_id)
+                VALUES ($1, $2, $3, $4)
+            """, 
+            notification_data['type'],
+            notification_data['message'],
+            json.dumps(notification_data),
+            admin['id'])
+        
+        print(f"Created notification for {len(admin_users)} admin(s): {notification_data['message']}")
+    except Exception as e:
+        print(f"Failed to create admin notification: {str(e)}")
+
 # Database connection
 async def init_db():
     global db_pool
@@ -621,16 +643,16 @@ async def start_test(token: str):
     async with db_pool.acquire() as conn:
         invite_row = await conn.fetchrow("""
             SELECT id, test_id, applicant_email, applicant_name, invited_by,
-                   invite_token, scheduled_date, status, created_at
+                   invite_token, scheduled_date, status, created_at, started_at
             FROM test_invites
-            WHERE invite_token = $1 AND status IN ('sent', 'scheduled')
+            WHERE invite_token = $1 AND status IN ('sent', 'scheduled', 'in_progress')
         """, uuid.UUID(token))
         
         if not invite_row:
             raise HTTPException(status_code=404, detail="Invalid or expired test invite")
 
-        # Check if it's the scheduled time (within 30 minutes window) - only for scheduled tests
-        if invite_row.get('scheduled_date'):
+        # Check if it's the scheduled time (within 30 minutes window) - only for scheduled tests that haven't started
+        if invite_row.get('scheduled_date') and invite_row['status'] != 'in_progress':
             now = datetime.now(timezone.utc)
             scheduled_time = invite_row['scheduled_date']
             if scheduled_time > now + timedelta(minutes=30) or scheduled_time < now - timedelta(minutes=30):
@@ -673,6 +695,15 @@ async def start_test(token: str):
             "questions": questions_for_display
         }
 
+        # Calculate remaining time for in-progress tests
+        remaining_time = None
+        if invite_row['status'] == 'in_progress' and invite_row.get('started_at'):
+            now = datetime.now(timezone.utc)
+            started_at = invite_row['started_at']
+            elapsed_seconds = (now - started_at).total_seconds()
+            total_seconds = test_row['duration_minutes'] * 60
+            remaining_time = max(0, int(total_seconds - elapsed_seconds))
+
         # Clean the invite object
         invite_clean = {
             "id": str(invite_row['id']),
@@ -680,24 +711,54 @@ async def start_test(token: str):
             "applicant_email": invite_row['applicant_email'],
             "applicant_name": invite_row['applicant_name'],
             "status": invite_row['status'],
-            "invite_token": str(invite_row['invite_token'])
+            "invite_token": str(invite_row['invite_token']),
+            "started_at": invite_row.get('started_at').isoformat() if invite_row.get('started_at') else None
         }
 
-        return {
+        response_data = {
             "invite": invite_clean,
             "test": test_clean
         }
+        
+        # Add remaining time for in-progress tests
+        if remaining_time is not None:
+            response_data["remaining_time_seconds"] = remaining_time
+            
+        return response_data
 
 @api_router.post("/start-test/{token}")
 async def start_test_monitoring(token: str):
     """Mark test as started and in progress"""
     async with db_pool.acquire() as conn:
         invite = await conn.fetchrow(
-            "SELECT id FROM test_invites WHERE invite_token = $1",
+            "SELECT id, applicant_email FROM test_invites WHERE invite_token = $1",
             uuid.UUID(token)
         )
         if not invite:
             raise HTTPException(status_code=404, detail="Invalid test token")
+
+        # Check if user has any other in-progress tests
+        existing_test = await conn.fetchrow("""
+            SELECT id, invite_token FROM test_invites 
+            WHERE applicant_email = $1 AND status = 'in_progress' AND invite_token != $2
+        """, invite['applicant_email'], uuid.UUID(token))
+        
+        if existing_test:
+            # Check if the current test is the oldest available test for this user
+            oldest_test = await conn.fetchrow("""
+                SELECT invite_token FROM test_invites 
+                WHERE applicant_email = $1 AND status IN ('sent', 'scheduled', 'in_progress')
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, invite['applicant_email'])
+            
+            # Only allow starting if this is the oldest test
+            if oldest_test and str(oldest_test['invite_token']) != token:
+                raise HTTPException(
+                    status_code=409, 
+                    detail="You have an incomplete test in progress. Please complete your oldest test first or contact administrator for help."
+                )
+            # If this IS the oldest test, allow it to proceed even if there are other in-progress tests
 
         # Update invite status to in_progress
         await conn.execute("""
@@ -705,6 +766,15 @@ async def start_test_monitoring(token: str):
             SET status = 'in_progress', started_at = $1
             WHERE invite_token = $2
         """, datetime.now(timezone.utc), token)
+
+        # Create notification for admins
+        await create_admin_notification(conn, {
+            "type": "test_started",
+            "message": f"Test started by {invite['applicant_email']}",
+            "applicant_email": invite['applicant_email'],
+            "invite_id": str(invite['id']),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
 
         return {"message": "Test started successfully", "status": "in_progress"}
 
@@ -957,6 +1027,65 @@ async def handle_webrtc_answer(data: Dict[str, Any]):
         return {"answer_id": answer_id, "status": "answer_sent"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to handle answer: {str(e)}")
+
+# Admin Notification Routes
+@api_router.get("/admin/notifications")
+async def get_admin_notifications(current_user: User = Depends(get_current_user)):
+    """Get notifications for the current admin user"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        notifications = await conn.fetch("""
+            SELECT id, type, message, data, is_read, created_at
+            FROM admin_notifications
+            WHERE admin_id = $1
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, uuid.UUID(current_user.id))
+        
+        return {
+            "notifications": [
+                {
+                    "id": str(n['id']),
+                    "type": n['type'],
+                    "message": n['message'],
+                    "data": json.loads(n['data']) if n['data'] else {},
+                    "is_read": n['is_read'],
+                    "created_at": n['created_at'].isoformat()
+                }
+                for n in notifications
+            ]
+        }
+
+@api_router.post("/admin/notifications/{notification_id}/mark-read")
+async def mark_notification_read(notification_id: str, current_user: User = Depends(get_current_user)):
+    """Mark a notification as read"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE admin_notifications
+            SET is_read = TRUE
+            WHERE id = $1 AND admin_id = $2
+        """, uuid.UUID(notification_id), uuid.UUID(current_user.id))
+        
+        return {"message": "Notification marked as read"}
+
+@api_router.get("/admin/notifications/unread-count")
+async def get_unread_notifications_count(current_user: User = Depends(get_current_user)):
+    """Get count of unread notifications for the current admin user"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval("""
+            SELECT COUNT(*) FROM admin_notifications
+            WHERE admin_id = $1 AND is_read = FALSE
+        """, uuid.UUID(current_user.id))
+        
+        return {"unread_count": count}
 
 @api_router.post("/webrtc/ice-candidate")
 async def handle_ice_candidate(data: Dict[str, Any]):

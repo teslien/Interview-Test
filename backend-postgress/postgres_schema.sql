@@ -93,6 +93,17 @@ CREATE TABLE active_webrtc_sessions (
     ended_at TIMESTAMPTZ
 );
 
+-- Admin notifications table
+CREATE TABLE admin_notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    data JSONB,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    admin_id UUID REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indexes for better performance
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
@@ -107,6 +118,9 @@ CREATE INDEX idx_submissions_invite_id ON test_submissions(invite_id);
 CREATE INDEX idx_submissions_test_id ON test_submissions(test_id);
 CREATE INDEX idx_submissions_applicant_email ON test_submissions(applicant_email);
 CREATE INDEX idx_answers_submission_id ON test_answers(submission_id);
+CREATE INDEX idx_notifications_admin_id ON admin_notifications(admin_id);
+CREATE INDEX idx_notifications_created_at ON admin_notifications(created_at);
+CREATE INDEX idx_notifications_is_read ON admin_notifications(is_read);
 CREATE INDEX idx_answers_question_id ON test_answers(question_id);
 CREATE INDEX idx_webrtc_type ON webrtc_signals(type);
 CREATE INDEX idx_webrtc_created_at ON webrtc_signals(created_at);

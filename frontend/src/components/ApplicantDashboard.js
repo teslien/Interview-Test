@@ -36,7 +36,8 @@ const ApplicantDashboard = () => {
       // Separate upcoming and completed tests
       const upcoming = invites.filter(invite => 
         invite.status === 'sent' || invite.status === 'scheduled' || invite.status === 'in_progress'
-      );
+      ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort by creation date (oldest first)
+      
       const completed = invites.filter(invite => 
         invite.status === 'completed'
       );
@@ -63,7 +64,40 @@ const ApplicantDashboard = () => {
     }
   };
 
-  const handleTakeTest = (test) => {
+  const canStartTest = (test, index) => {
+    // Check if there are any in-progress tests
+    const inProgressTests = upcomingTests.filter(t => t.status === 'in_progress');
+    
+    // If no tests in progress, can start any test
+    if (inProgressTests.length === 0) {
+      return { canStart: true, reason: '' };
+    }
+    
+    // If this test is already in progress, can continue
+    if (test.status === 'in_progress') {
+      return { canStart: true, reason: 'Continue test' };
+    }
+    
+    // If this is the first (oldest) test and not in progress, can start
+    if (index === 0) {
+      return { canStart: true, reason: 'Start oldest test first' };
+    }
+    
+    // Otherwise, cannot start
+    return { 
+      canStart: false, 
+      reason: 'Complete your oldest test first' 
+    };
+  };
+
+  const handleTakeTest = (test, index) => {
+    const { canStart, reason } = canStartTest(test, index);
+    
+    if (!canStart) {
+      alert(reason + '. Please complete your tests in order.');
+      return;
+    }
+    
     const token = test.token || test.invite_token;
     if (token) {
       // Navigate to test taking page with token
@@ -186,40 +220,57 @@ const ApplicantDashboard = () => {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {upcomingTests.map((test) => (
-                  <Card key={test.id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
-                        {getStatusBadge(test.status)}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Calendar className="h-4 w-4" />
-                          <span>
-                            {test.scheduled_date 
-                              ? new Date(test.scheduled_date).toLocaleDateString()
-                              : 'Not scheduled'
-                            }
-                          </span>
+                {upcomingTests.map((test, index) => {
+                  const { canStart, reason } = canStartTest(test, index);
+                  return (
+                    <Card key={test.id} className={`glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover ${!canStart ? 'opacity-75' : ''}`}>
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center space-x-2">
+                            <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
+                            {index === 0 && upcomingTests.filter(t => t.status === 'in_progress').length > 0 && test.status !== 'in_progress' && (
+                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Next</span>
+                            )}
+                          </div>
+                          {getStatusBadge(test.status)}
                         </div>
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Clock className="h-4 w-4" />
-                          <span>{test.test?.duration_minutes || 90} minutes</span>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Calendar className="h-4 w-4" />
+                            <span>
+                              {test.scheduled_date 
+                                ? new Date(test.scheduled_date).toLocaleDateString()
+                                : 'Not scheduled'
+                              }
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Clock className="h-4 w-4" />
+                            <span>{test.test?.duration_minutes || 90} minutes</span>
+                          </div>
+                          {!canStart && (
+                            <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                              {reason}
+                            </div>
+                          )}
+                          <Button 
+                            className={`w-full mt-4 ${canStart 
+                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                            data-testid={`take-test-${test.id}`}
+                            onClick={() => handleTakeTest(test, index)}
+                            disabled={!canStart}
+                          >
+                            {test.status === 'in_progress' ? 'Continue Test' : 'Take Test'}
+                          </Button>
                         </div>
-                        <Button 
-                          className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-                          data-testid={`take-test-${test.id}`}
-                          onClick={() => handleTakeTest(test)}
-                        >
-                          Take Test
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
