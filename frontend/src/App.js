@@ -3,6 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
+import { ThemeProvider } from './contexts/ThemeContext';
+
+// Styles
+import './styles/themes.css';
 
 // Components
 import SimpleLoginFixed from './components/SimpleLoginFixed';
@@ -150,8 +154,9 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 function App() {
   return (
     <div className="App">
-      <AuthProvider>
-        <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<SimpleLoginFixed />} />
@@ -186,9 +191,10 @@ function App() {
             {/* Default Route */}
             <Route path="/" element={<DefaultRoute />} />
           </Routes>
-        </BrowserRouter>
-        <Toaster />
-      </AuthProvider>
+          </BrowserRouter>
+          <Toaster />
+        </AuthProvider>
+      </ThemeProvider>
     </div>
   );
 }

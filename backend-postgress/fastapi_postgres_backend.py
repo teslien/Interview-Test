@@ -1059,6 +1059,67 @@ async def update_applicant_status(
         
         return {"message": f"Applicant status updated to {'active' if is_active else 'inactive'}"}
 
+@api_router.delete("/admin/applicants/{applicant_id}")
+async def delete_applicant_completely(
+    applicant_id: str,
+    admin: User = Depends(get_admin_user)
+):
+    """Completely delete an applicant and all associated data including invites and submissions"""
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            # Check if applicant exists
+            applicant = await conn.fetchrow(
+                "SELECT id, email, full_name FROM users WHERE id = $1 AND role = 'applicant'",
+                uuid.UUID(applicant_id)
+            )
+            
+            if not applicant:
+                raise HTTPException(status_code=404, detail="Applicant not found")
+            
+            # Delete in proper order to handle foreign key constraints
+            
+            # 1. Delete test answers first
+            await conn.execute("""
+                DELETE FROM test_answers 
+                WHERE submission_id IN (
+                    SELECT id FROM test_submissions 
+                    WHERE applicant_email = $1
+                )
+            """, applicant['email'])
+            
+            # 2. Delete test submissions
+            await conn.execute("""
+                DELETE FROM test_submissions 
+                WHERE applicant_email = $1
+            """, applicant['email'])
+            
+            # 3. Delete WebRTC sessions associated with the applicant's invites
+            await conn.execute("""
+                DELETE FROM active_webrtc_sessions 
+                WHERE invite_id IN (
+                    SELECT id FROM test_invites 
+                    WHERE applicant_email = $1
+                )
+            """, applicant['email'])
+            
+            # 4. Delete test invites
+            deleted_invites = await conn.fetch("""
+                DELETE FROM test_invites 
+                WHERE applicant_email = $1
+                RETURNING id, test_id
+            """, applicant['email'])
+            
+            # 5. Finally delete the user account
+            await conn.execute("""
+                DELETE FROM users WHERE id = $1
+            """, uuid.UUID(applicant_id))
+            
+            return {
+                "message": f"Applicant '{applicant['full_name']}' and all associated data deleted successfully",
+                "deleted_invites_count": len(deleted_invites),
+                "applicant_email": applicant['email']
+            }
+
 @api_router.get("/admin/email-settings")
 async def get_email_settings(admin: User = Depends(get_admin_user)):
     """Get email configuration settings"""
@@ -1136,6 +1197,66 @@ async def update_email_settings(
             )
         
         return {"message": "Email settings updated successfully"}
+
+@api_router.get("/admin/theme-settings")
+async def get_theme_settings(admin: User = Depends(get_admin_user)):
+    """Get theme configuration settings"""
+    async with db_pool.acquire() as conn:
+        settings = await conn.fetchrow("""
+            SELECT theme_name, custom_colors
+            FROM admin_theme_settings 
+            WHERE admin_id = $1
+        """, uuid.UUID(admin.id))
+        
+        if not settings:
+            # Return default settings if none exist
+            return {
+                "themeName": "classic",
+                "customColors": {}
+            }
+        
+        return {
+            "themeName": settings['theme_name'] or "classic",
+            "customColors": settings['custom_colors'] or {}
+        }
+
+@api_router.put("/admin/theme-settings")
+async def update_theme_settings(
+    settings: dict,
+    admin: User = Depends(get_admin_user)
+):
+    """Update theme configuration settings"""
+    async with db_pool.acquire() as conn:
+        # Check if settings exist
+        existing = await conn.fetchrow(
+            "SELECT id FROM admin_theme_settings WHERE admin_id = $1",
+            uuid.UUID(admin.id)
+        )
+        
+        if existing:
+            # Update existing settings
+            await conn.execute("""
+                UPDATE admin_theme_settings 
+                SET theme_name = $1, custom_colors = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE admin_id = $3
+            """, 
+            settings.get('themeName', 'classic'),
+            json.dumps(settings.get('customColors', {})),
+            uuid.UUID(admin.id)
+            )
+        else:
+            # Create new settings
+            await conn.execute("""
+                INSERT INTO admin_theme_settings 
+                (admin_id, theme_name, custom_colors)
+                VALUES ($1, $2, $3)
+            """,
+            uuid.UUID(admin.id),
+            settings.get('themeName', 'classic'),
+            json.dumps(settings.get('customColors', {}))
+            )
+        
+        return {"message": "Theme settings updated successfully"}
 
 # Results Routes
 @api_router.get("/results")
