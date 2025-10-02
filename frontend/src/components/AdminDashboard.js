@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -7,7 +8,6 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
@@ -18,11 +18,18 @@ const API = `${BACKEND_URL}/api`;
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [tests, setTests] = useState([]);
   const [invites, setInvites] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Dialog state for viewing result details
+  const [selectedResult, setSelectedResult] = useState(null);
+  const [resultDetails, setResultDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   
   // Test creation state
   const [showCreateTest, setShowCreateTest] = useState(false);
@@ -210,6 +217,29 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleViewResultDetails = async (result) => {
+    setSelectedResult(result);
+    setDetailsLoading(true);
+    setDetailsDialogOpen(true);
+
+    try {
+      const response = await axios.get(`${API}/results/${result.submission_id}`);
+      setResultDetails(response.data);
+    } catch (error) {
+      console.error('Failed to fetch result details:', error);
+      toast.error('Failed to load result details');
+      setResultDetails(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closeResultDetails = () => {
+    setDetailsDialogOpen(false);
+    setSelectedResult(null);
+    setResultDetails(null);
+  };
+
   const getStatusBadge = (status) => {
     const statusConfig = {
       sent: { color: 'bg-blue-100 text-blue-800', label: 'Sent' },
@@ -385,7 +415,7 @@ const AdminDashboard = () => {
                   </Button>
                   
                   <Button
-                    onClick={() => window.open('/monitoring', '_blank')}
+                    onClick={() => navigate('/monitoring')}
                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white h-20 flex flex-col items-center justify-center space-y-2"
                     data-testid="monitor-tests-button"
                   >
@@ -579,14 +609,19 @@ const AdminDashboard = () => {
                         <h3 className="font-semibold text-gray-900">{result.applicant_name}</h3>
                         <p className="text-sm text-gray-600">{result.test_title}</p>
                         <p className="text-xs text-gray-500">
-                          Submitted: {new Date(result.submission.submitted_at).toLocaleDateString()}
+                          Submitted: {new Date(result.submitted_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-indigo-600">
-                          {result.submission.score ? Math.round(result.submission.score) : 0}%
+                          {result.score ? Math.round(result.score) : 0}%
                         </div>
-                        <Button size="sm" variant="outline" className="mt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          onClick={() => handleViewResultDetails(result)}
+                        >
                           View Details
                         </Button>
                       </div>
@@ -964,6 +999,127 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Custom Modal for Result Details */}
+      {detailsDialogOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50 bg-black bg-opacity-50"
+            onClick={closeResultDetails}
+          />
+          {/* Modal Content */}
+          <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-4xl translate-x-[-50%] translate-y-[-50%] gap-4 border bg-white p-6 shadow-lg max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Test Result Details</h2>
+                <p className="text-sm text-gray-600">Detailed information about the test submission</p>
+              </div>
+              <button
+                onClick={closeResultDetails}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {detailsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <span className="ml-2">Loading details...</span>
+              </div>
+            ) : resultDetails ? (
+              <div className="overflow-y-auto max-h-[60vh] space-y-6">
+                {/* Test Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-gray-900 mb-3">Test Information</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-sm text-gray-600">Test:</span>
+                        <p className="font-medium">{resultDetails.test_title}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Duration:</span>
+                        <p className="font-medium">{resultDetails.test_duration_minutes} minutes</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Score:</span>
+                        <p className={`font-bold text-lg ${resultDetails.score >= 70 ? 'text-green-600' : resultDetails.score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {Math.round(resultDetails.score)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-gray-900 mb-3">Submission Information</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-sm text-gray-600">Started:</span>
+                        <p className="font-medium">{new Date(resultDetails.started_at).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Submitted:</span>
+                        <p className="font-medium">{new Date(resultDetails.submitted_at).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Monitored:</span>
+                        <Badge className={resultDetails.is_monitored ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                          {resultDetails.is_monitored ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Answers */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-4">Questions & Answers</h4>
+                  <div className="space-y-4">
+                    {resultDetails.answers.map((answer, index) => (
+                      <div key={index} className="border rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <h5 className="font-medium text-gray-900">
+                            Question {index + 1} ({answer.points} {answer.points === 1 ? 'point' : 'points'})
+                          </h5>
+                          <Badge className={`capitalize ${
+                            answer.question_type === 'multiple_choice' ? 'bg-blue-100 text-blue-800' :
+                            answer.question_type === 'coding' ? 'bg-purple-100 text-purple-800' :
+                            'bg-green-100 text-green-800'
+                          }`}>
+                            {answer.question_type.replace('_', ' ')}
+                          </Badge>
+                        </div>
+
+                        <p className="text-gray-700 mb-3">{answer.question}</p>
+
+                        <div className="bg-gray-50 p-3 rounded">
+                          <p className="font-medium text-gray-900 mb-1">Answer:</p>
+                          <p className="text-gray-700 whitespace-pre-wrap">{answer.answer}</p>
+                        </div>
+
+                        {answer.question_type === 'multiple_choice' && answer.correct_answer && (
+                          <div className="mt-2">
+                            <p className="font-medium text-gray-900 mb-1">Correct Answer:</p>
+                            <p className={`text-sm ${answer.answer === answer.correct_answer ? 'text-green-600' : 'text-red-600'}`}>
+                              {answer.correct_answer} {answer.answer === answer.correct_answer ? '✓ Correct' : '✗ Incorrect'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Failed to load result details
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

@@ -10,13 +10,25 @@ import { Progress } from '@/components/ui/progress';
 import { Clock, Camera, Mic, AlertTriangle, Send, Code } from 'lucide-react';
 // Removed toast import
 
+// WebRTC Configuration
+const RTC_CONFIGURATION = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
+};
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const TakeTest = () => {
   const { token } = useParams();
   const navigate = useNavigate();
-  const videoRef = useRef(null);
+  const previewVideoRef = useRef(null);
+  const monitoringVideoRef = useRef(null);
   const [invite, setInvite] = useState(null);
   const [test, setTest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -27,12 +39,25 @@ const TakeTest = () => {
   const [videoStream, setVideoStream] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // WebRTC state
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [webrtcConnected, setWebrtcConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'failed'
+  const [inviteId, setInviteId] = useState(null);
+
   useEffect(() => {
     fetchTestDetails();
     return () => {
-      // Cleanup video stream
+      // Cleanup video stream and WebRTC connection
       if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
+      }
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      // End WebRTC session in backend
+      if (inviteId) {
+        axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
       }
     };
   }, [token]);
@@ -59,6 +84,10 @@ const TakeTest = () => {
       setInvite(response.data.invite);
       setTest(response.data.test);
       setTimeLeft(response.data.test.duration_minutes * 60);
+      setInviteId(response.data.invite.id);
+
+      // Initialize WebRTC session for monitoring
+      await initializeWebRTCSession(response.data.invite.id);
     } catch (error) {
       console.error('Failed to fetch test details:', error);
       alert('Unable to load test. Error: ' + (error.response?.data?.detail || error.message));
@@ -68,29 +97,178 @@ const TakeTest = () => {
     }
   };
 
-  const startVideo = async () => {
+  const initializeWebRTCSession = async (inviteId) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
+      // Initialize WebRTC session in backend
+      await axios.post(`${API}/webrtc/start-session/${inviteId}`);
+      console.log('WebRTC session initialized');
+    } catch (error) {
+      console.error('Failed to initialize WebRTC session:', error);
+    }
+  };
+
+  const startVideoAndWebRTC = async () => {
+    try {
+      // Get user's media stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
       });
       setVideoStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
+        previewVideoRef.current.play().catch(e => console.error('Preview video play failed:', e));
       }
+
+      // Set up WebRTC peer connection as the "offerer" (applicant initiates)
+      const pc = new RTCPeerConnection(RTC_CONFIGURATION);
+
+      // Add local stream to peer connection
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+
+      // Handle ICE candidates
+      pc.onicecandidate = async (event) => {
+        if (event.candidate && inviteId) {
+          try {
+            await axios.post(`${API}/webrtc/ice-candidate`, {
+              candidate: event.candidate,
+              invite_id: inviteId
+            });
+          } catch (error) {
+            console.error('Failed to send ICE candidate:', error);
+          }
+        }
+      };
+
+      // Handle connection state changes
+      pc.onconnectionstatechange = () => {
+        console.log('TakeTest - Connection state:', pc.connectionState);
+        switch (pc.connectionState) {
+          case 'connected':
+            console.log('TakeTest - WebRTC connected successfully');
+            setConnectionStatus('connected');
+            setWebrtcConnected(true);
+            break;
+          case 'connecting':
+            console.log('TakeTest - WebRTC connecting...');
+            setConnectionStatus('connecting');
+            break;
+          case 'failed':
+          case 'closed':
+            console.log('TakeTest - WebRTC connection failed');
+            setConnectionStatus('failed');
+            setWebrtcConnected(false);
+            break;
+          default:
+            console.log('TakeTest - Connection state changed:', pc.connectionState);
+            break;
+        }
+      };
+
+      // Create and send offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      console.log('TakeTest - Created and set local offer');
+
+      // Send offer to admin via backend
+      console.log('TakeTest - Sending offer to backend:', { type: 'offer', sdp: offer.sdp.substring(0, 50) + '...', invite_id: inviteId });
+      try {
+        const response = await axios.post(`${API}/webrtc/offer`, {
+          type: 'offer',
+          sdp: offer.sdp,
+          invite_id: inviteId
+        });
+        console.log('TakeTest - Offer sent successfully:', response.status);
+      } catch (error) {
+        console.error('TakeTest - Failed to send offer:', error.response?.data || error.message);
+        throw error;
+      }
+
+      // Wait a bit for admin to initialize session, then poll for answer
+      setTimeout(() => {
+        console.log('TakeTest - Starting to poll for WebRTC answer');
+        pollForWebRTCAnswer(pc);
+      }, 1000);
+
+      setPeerConnection(pc);
       return true;
     } catch (error) {
-      console.error('Failed to start video:', error);
-      alert('Camera access is required for the test');
+      console.error('Failed to start video and WebRTC:', error);
+      alert('Camera access and WebRTC setup failed. Please check your camera permissions.');
       return false;
     }
   };
 
+  const pollForWebRTCAnswer = async (pc) => {
+    if (!inviteId) return;
+
+    try {
+      const response = await axios.get(`${API}/webrtc/signals/${inviteId}`);
+      const signals = response.data.signals;
+
+      // Find the latest answer
+      const answerSignal = signals
+        .filter(signal => signal.type === 'answer')
+        .pop();
+
+      if (answerSignal && !webrtcConnected) {
+        const answer = {
+          type: 'answer',
+          sdp: answerSignal.data.sdp
+        };
+
+        await pc.setRemoteDescription(answer);
+        console.log('WebRTC answer received and set');
+      }
+
+      // Find ICE candidates and add them
+      const iceCandidates = signals.filter(signal => signal.type === 'ice_candidate');
+      for (const candidateSignal of iceCandidates) {
+        if (candidateSignal.data.candidate) {
+          try {
+            await pc.addIceCandidate(candidateSignal.data.candidate);
+          } catch (error) {
+            console.error('Failed to add ICE candidate:', error);
+          }
+        }
+      }
+
+      // Continue polling if not connected
+      if (!webrtcConnected) {
+        console.log('TakeTest - Continuing to poll for WebRTC answer...');
+        setTimeout(() => pollForWebRTCAnswer(pc), 2000);
+      } else {
+        console.log('TakeTest - WebRTC connected, stopping polling');
+      }
+    } catch (error) {
+      console.error('Failed to poll for WebRTC answer:', error);
+      // Continue polling on error
+      if (!webrtcConnected) {
+        setTimeout(() => pollForWebRTCAnswer(pc), 2000);
+      }
+    }
+  };
+
   const handleStartTest = async () => {
-    const videoStarted = await startVideo();
-    if (videoStarted) {
-      setTestStarted(true);
-      alert('Test started! You are being monitored.');
+    try {
+      // First start the test in backend to set status to 'in_progress'
+      await axios.post(`${API}/start-test/${token}`);
+
+      // Then start video and WebRTC
+      const videoStarted = await startVideoAndWebRTC();
+      if (videoStarted) {
+        setTestStarted(true);
+        // Set the local stream to monitoring video for self-view during test
+        if (monitoringVideoRef.current && videoStream) {
+          monitoringVideoRef.current.srcObject = videoStream;
+          monitoringVideoRef.current.play().catch(e => console.error('Monitoring video play failed:', e));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to start test:', error);
+      alert('Failed to start test: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -110,15 +288,24 @@ const TakeTest = () => {
           answer: answer
         }))
       };
-      
+
       await axios.post(`${API}/submit-test/${token}`, submissionData);
+
+      // End WebRTC session
+      if (inviteId) {
+        await axios.post(`${API}/webrtc/end-session/${inviteId}`);
+      }
+
       alert('Test submitted successfully!');
-      
-      // Stop video stream
+
+      // Stop video stream and close peer connection
       if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
       }
-      
+      if (peerConnection) {
+        peerConnection.close();
+      }
+
       navigate('/login');
     } catch (error) {
       console.error('Failed to submit test:', error);
@@ -162,10 +349,11 @@ const TakeTest = () => {
             <CardContent className="space-y-6">
               {/* Video Preview */}
               <div className="aspect-video bg-gray-900 rounded-lg overflow-hidden relative">
-                <video 
-                  ref={videoRef}
-                  autoPlay 
-                  muted 
+                <video
+                  ref={previewVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -247,18 +435,42 @@ const TakeTest = () => {
               </div>
             </div>
 
-            {/* Video Monitor */}
-            <div className="w-32 h-24 bg-gray-900 rounded-lg overflow-hidden relative">
-              <video 
-                ref={videoRef}
-                autoPlay 
-                muted 
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute top-1 right-1">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  <Mic className="h-3 w-3 text-white" />
+            {/* Video Monitor and Connection Status */}
+            <div className="flex items-center space-x-3">
+              {/* Connection Status */}
+              <div className="flex items-center space-x-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  connectionStatus === 'connected' ? 'bg-green-500' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                  connectionStatus === 'failed' ? 'bg-red-500' : 'bg-gray-500'
+                }`}></div>
+                <span className={`text-sm font-medium ${
+                  connectionStatus === 'connected' ? 'text-green-600' :
+                  connectionStatus === 'connecting' ? 'text-yellow-600' :
+                  connectionStatus === 'failed' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {connectionStatus === 'connected' ? 'Connected' :
+                   connectionStatus === 'connecting' ? 'Connecting...' :
+                   connectionStatus === 'failed' ? 'Connection Failed' : 'Disconnected'}
+                </span>
+              </div>
+
+              {/* Video Monitor */}
+              <div className="w-32 h-24 bg-gray-900 rounded-lg overflow-hidden relative">
+                <video
+                  ref={monitoringVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-1 right-1">
+                  <div className="flex space-x-1">
+                    <div className={`w-2 h-2 rounded-full animate-pulse ${
+                      connectionStatus === 'connected' ? 'bg-green-400' : 'bg-red-400'
+                    }`}></div>
+                    <Mic className="h-3 w-3 text-white" />
+                  </div>
                 </div>
               </div>
             </div>
