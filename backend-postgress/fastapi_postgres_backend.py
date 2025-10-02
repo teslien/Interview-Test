@@ -845,22 +845,25 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         """, uuid.UUID(submission_id), invite['id'], invite['test_id'],
             invite['applicant_email'], auto_score_percentage, final_score, scoring_status, invite.get('started_at'), datetime.now(timezone.utc), False)
 
-        # Insert answers with manual scoring status
+        # Create a map of submitted answers for easy lookup
+        submitted_answers = {}
         for answer in submission.answers:
-            # Find question type to set appropriate manual scoring status
-            question_type = None
-            for q in question_rows:
-                if str(q['id']) == answer.question_id:
-                    question_type = q['type']
-                    break
+            submitted_answers[answer.question_id] = answer.answer
+        
+        # Insert records for ALL questions in the test, not just answered ones
+        for question in question_rows:
+            question_id_str = str(question['id'])
+            
+            # Get the submitted answer or use empty string for unattempted questions
+            answer_text = submitted_answers.get(question_id_str, "")
             
             # Set manual scoring status based on question type
-            manual_status = 'pending' if question_type in ['essay', 'coding'] else None
+            manual_status = 'pending' if question['type'] in ['essay', 'coding'] else None
             
             await conn.execute("""
                 INSERT INTO test_answers (submission_id, question_id, answer, manual_score_status)
                 VALUES ($1, $2, $3, $4)
-            """, uuid.UUID(submission_id), uuid.UUID(answer.question_id), answer.answer, manual_status)
+            """, uuid.UUID(submission_id), question['id'], answer_text, manual_status)
 
         # Update invite status
         await conn.execute("""
@@ -1218,9 +1221,11 @@ async def get_submission_for_scoring(submission_id: str, current_user: User = De
         if not submission:
             raise HTTPException(status_code=404, detail="Submission not found")
         
-        # Get answers with questions
+        # Get answers with questions (including unattempted ones)
         answers = await conn.fetch("""
-            SELECT ta.*, q.question, q.type, q.points, q.expected_language
+            SELECT ta.id, ta.question_id, ta.answer, ta.manual_score, ta.manual_score_status, 
+                   ta.review_comments, ta.reviewed_at,
+                   q.question, q.type, q.points, q.expected_language, q.question_order
             FROM test_answers ta
             JOIN questions q ON ta.question_id = q.id
             WHERE ta.submission_id = $1
@@ -1292,13 +1297,29 @@ async def score_answer(
         uuid.UUID(submission_id))
         
         # Check if all manual questions are scored
+        # Count questions that need manual scoring (attempted but not yet scored)
         pending_count = await conn.fetchval("""
             SELECT COUNT(*) FROM test_answers ta
             JOIN questions q ON ta.question_id = q.id
             WHERE ta.submission_id = $1 
             AND q.type IN ('essay', 'coding')
             AND ta.manual_score_status = 'pending'
+            AND ta.answer IS NOT NULL 
+            AND ta.answer != ''
         """, uuid.UUID(submission_id))
+        
+        # Auto-score unattempted questions as 0
+        await conn.execute("""
+            UPDATE test_answers 
+            SET manual_score = 0, 
+                manual_score_status = 'wrong',
+                reviewer_id = $2,
+                reviewed_at = CURRENT_TIMESTAMP,
+                review_comments = 'Not attempted'
+            WHERE submission_id = $1 
+            AND manual_score_status = 'pending'
+            AND (answer IS NULL OR answer = '')
+        """, uuid.UUID(submission_id), uuid.UUID(current_user.id))
         
         # Update submission scoring status
         if pending_count == 0:
@@ -1321,17 +1342,31 @@ async def recalculate_final_score(conn, submission_id: str, reviewer_id: str):
         SELECT auto_score FROM test_submissions WHERE id = $1
     """, uuid.UUID(submission_id))
     
-    # Get all manual scores
+    # Get all manual scores (including unattempted questions)
     manual_scores = await conn.fetch("""
-        SELECT ta.manual_score, q.points
+        SELECT ta.manual_score, ta.answer, q.points
         FROM test_answers ta
         JOIN questions q ON ta.question_id = q.id
         WHERE ta.submission_id = $1 AND q.type IN ('essay', 'coding')
     """, uuid.UUID(submission_id))
     
     # Calculate total manual score
-    total_manual_score = sum(score['manual_score'] or 0 for score in manual_scores)
-    total_manual_points = sum(score['points'] for score in manual_scores)
+    # For unattempted questions (empty answer), manual_score should be 0
+    total_manual_score = 0
+    total_manual_points = 0
+    
+    for score in manual_scores:
+        total_manual_points += score['points']
+        if score['manual_score'] is not None:
+            # Question was manually scored
+            total_manual_score += score['manual_score']
+        elif not score['answer'] or score['answer'].strip() == "":
+            # Question was not attempted - score is 0
+            total_manual_score += 0
+        else:
+            # Question was attempted but not yet scored - don't include in calculation
+            # This shouldn't happen if we're calling this function only when all questions are scored
+            pass
     
     # Get total auto points
     total_auto_points = await conn.fetchval("""
