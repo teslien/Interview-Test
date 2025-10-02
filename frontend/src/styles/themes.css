@@ -413,13 +413,21 @@
 .theme-premium [role="tab"],
 .theme-premium .nav-tab,
 .theme-premium button[role="tab"] {
-  background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 50%, #0f0f0f 100%) !important;
-  color: #888888 !important;
-  border: 1px solid #333333 !important;
-  box-shadow: 
-    0 2px 4px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  background: none !important;
+  color: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
+
+.theme-premium .bg-white\/50{
+  background: linear-gradient(145deg, #404040 0%, #2a2a2a 50%, #1a1a1a 100%) !important;
+  border: 1px solid #555555 !important;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
 
 .theme-premium [role="tab"]:hover,
 .theme-premium .nav-tab:hover,
