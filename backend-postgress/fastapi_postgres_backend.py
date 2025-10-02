@@ -17,6 +17,16 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
 from contextlib import asynccontextmanager
+import re
+
+# Try to import Gemini AI, but make it optional
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    genai = None
+    GEMINI_AVAILABLE = False
+    print("WARNING: google-generativeai not installed. Auto-generate feature will not be available.")
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -97,6 +107,11 @@ class TestInviteCreate(BaseModel):
 
 class ScheduleTest(BaseModel):
     scheduled_date: datetime
+
+class AutoGenerateTest(BaseModel):
+    topic: str
+    questionCount: int
+    geminiApiKey: str
 
 class TestAnswer(BaseModel):
     question_id: str
@@ -442,6 +457,200 @@ async def get_test(test_id: str, admin: User = Depends(get_admin_user)):
             is_active=test_row['is_active']
         )
 
+@api_router.post("/tests/auto-generate")
+async def auto_generate_test(data: AutoGenerateTest, admin: User = Depends(get_admin_user)):
+    """Auto generate a test using Gemini AI"""
+    
+    # Check if Gemini AI is available
+    if not GEMINI_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Auto-generate feature is not available. Please install google-generativeai package: pip install google-generativeai==0.3.1"
+        )
+    
+    try:
+        # Configure Gemini AI
+        genai.configure(api_key=data.geminiApiKey)
+        
+        # Try to list available models for debugging
+        try:
+            models = genai.list_models()
+            available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+            print(f"Available models: {available_models}")
+        except Exception as e:
+            print(f"Could not list models: {e}")
+        
+        # Try different model names in order of preference (based on available models)
+        model_names = [
+            'models/gemini-2.5-flash',
+            'models/gemini-2.0-flash', 
+            'models/gemini-flash-latest',
+            'models/gemini-pro-latest',
+            'models/gemini-2.5-pro',
+            'models/gemini-2.0-flash-001',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-flash'
+        ]
+        
+        model = None
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                print(f"Successfully created model: {model_name}")
+                break
+            except Exception as e:
+                print(f"Failed to create model {model_name}: {e}")
+                continue
+        
+        if model is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Could not initialize any Gemini model. Please check your API key and try again."
+            )
+        
+        # Define the JSON structure we want
+        json_structure = {
+            "title": "string",
+            "description": "string", 
+            "duration_minutes": "number",
+            "questions": [
+                {
+                    "type": "multiple_choice",
+                    "question": "string",
+                    "options": ["string", "string", "string", "string"],
+                    "correct_answer": "string",
+                    "points": "number"
+                }
+            ]
+        }
+        
+        # Create the prompt
+        prompt = f"""
+Create a comprehensive {data.topic} assessment test with exactly {data.questionCount} multiple choice questions.
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{json.dumps(json_structure, indent=2)}
+
+Requirements:
+- Title: Create a professional title for the {data.topic} test
+- Description: Write a brief description (2-3 sentences) explaining what the test covers
+- Duration: Set appropriate duration in minutes (estimate 2-3 minutes per question)
+- Questions: Create exactly {data.questionCount} multiple choice questions
+- Each question must have exactly 4 options (A, B, C, D)
+- Questions should range from beginner to advanced level
+- Each question worth 1-5 points based on difficulty
+- Cover different aspects of {data.topic}
+- Ensure correct_answer matches exactly one of the options
+- Make questions practical and relevant to real-world scenarios
+
+Topic: {data.topic}
+Number of questions: {data.questionCount}
+
+Return ONLY the JSON object, no additional text or formatting.
+"""
+
+        # Generate content
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        # Clean up the response text (remove markdown formatting if present)
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]  # Remove ```json
+        if response_text.startswith('```'):
+            response_text = response_text[3:]   # Remove ```
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]  # Remove ending ```
+        
+        response_text = response_text.strip()
+        
+        # Parse the JSON response
+        try:
+            test_data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, try to extract JSON from the response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                test_data = json.loads(json_match.group())
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to parse AI response as JSON: {str(e)}"
+                )
+        
+        # Validate the structure
+        if not all(key in test_data for key in ['title', 'description', 'duration_minutes', 'questions']):
+            raise HTTPException(
+                status_code=500,
+                detail="AI response missing required fields"
+            )
+        
+        if len(test_data['questions']) != data.questionCount:
+            raise HTTPException(
+                status_code=500,
+                detail=f"AI generated {len(test_data['questions'])} questions, expected {data.questionCount}"
+            )
+        
+        # Create the test in database
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                # Insert test
+                test_id = uuid.uuid4()
+                await conn.execute("""
+                    INSERT INTO tests (id, title, description, duration_minutes, created_by, created_at, is_active)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """, test_id, test_data['title'], test_data['description'], 
+                    test_data['duration_minutes'], uuid.UUID(admin.id), 
+                    datetime.now(timezone.utc), True)
+                
+                # Insert questions
+                for i, question_data in enumerate(test_data['questions']):
+                    question_id = uuid.uuid4()
+                    
+                    # Validate question structure
+                    if not all(key in question_data for key in ['type', 'question', 'options', 'correct_answer', 'points']):
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Question {i+1} missing required fields"
+                        )
+                    
+                    if question_data['correct_answer'] not in question_data['options']:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Question {i+1}: correct_answer must be one of the options"
+                        )
+                    
+                    await conn.execute("""
+                        INSERT INTO questions (id, test_id, type, question, options, correct_answer, 
+                                             expected_language, points, question_order)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    """, question_id, test_id, question_data['type'], question_data['question'],
+                        json.dumps(question_data['options']), question_data['correct_answer'],
+                        None, question_data['points'], i + 1)
+        
+        return {
+            "success": True,
+            "message": "Test generated successfully",
+            "test": {
+                "id": str(test_id),
+                "title": test_data['title'],
+                "description": test_data['description'],
+                "duration_minutes": test_data['duration_minutes'],
+                "question_count": len(test_data['questions'])
+            }
+        }
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            import traceback
+            print(f"Auto-generate error: {str(e)}")
+            print(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate test: {str(e)}"
+            )
+
 @api_router.delete("/tests/{test_id}")
 async def delete_test(test_id: str, admin: User = Depends(get_admin_user)):
     """Delete a test (soft delete by setting is_active to false)"""
@@ -703,9 +912,10 @@ async def get_invites(
 ):
     async with db_pool.acquire() as conn:
         # Build WHERE clause dynamically
-        where_conditions = ["invited_by = $1"]
-        params = [uuid.UUID(admin.id)]
-        param_count = 1
+        # Show all invites for any admin (admin override)
+        where_conditions = []
+        params = []
+        param_count = 0
         
         if date_filter:
             param_count += 1
@@ -735,7 +945,7 @@ async def get_invites(
             where_conditions.append(f"LOWER(applicant_email) LIKE LOWER(${param_count})")
             params.append(f"%{email_search}%")
         
-        where_clause = " AND ".join(where_conditions)
+        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
         
         query = f"""
             SELECT id, test_id, applicant_email, applicant_name, invited_by,

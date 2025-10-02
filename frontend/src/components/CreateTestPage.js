@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -164,15 +164,53 @@ const CreateTestPage = () => {
   };
 
   const saveDraft = () => {
-    localStorage.setItem('test_draft', JSON.stringify(testData));
-    toast.success('Draft saved locally');
+    const draftId = Date.now().toString();
+    const draftToSave = {
+      ...testData,
+      lastModified: new Date().toISOString()
+    };
+    localStorage.setItem(`test_draft_${draftId}`, JSON.stringify(draftToSave));
+    toast.success('Draft saved successfully!');
   };
 
   const loadDraft = () => {
-    const draft = localStorage.getItem('test_draft');
-    if (draft) {
-      setTestData(JSON.parse(draft));
-      toast.success('Draft loaded');
+    try {
+      // First check for old format draft
+      const oldDraft = localStorage.getItem('test_draft');
+      if (oldDraft) {
+        setTestData(JSON.parse(oldDraft));
+        toast.success('Draft loaded');
+        return;
+      }
+
+      // Look for new format drafts
+      const drafts = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('test_draft_')) {
+          const draftData = JSON.parse(localStorage.getItem(key));
+          drafts.push({
+            id: key.replace('test_draft_', ''),
+            ...draftData,
+            lastModified: new Date(draftData.lastModified || Date.now())
+          });
+        }
+      }
+      
+      if (drafts.length > 0) {
+        // Load the most recent draft
+        drafts.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+        const latestDraft = drafts[0];
+        setTestData({
+          title: latestDraft.title || '',
+          description: latestDraft.description || '',
+          duration_minutes: latestDraft.duration_minutes || 60,
+          questions: latestDraft.questions || []
+        });
+        toast.success('Latest draft loaded');
+      }
+    } catch (error) {
+      console.error('Error loading draft:', error);
     }
   };
 
@@ -186,6 +224,32 @@ const CreateTestPage = () => {
     });
     toast.success('Draft cleared');
   };
+
+  // Load draft on component mount
+  useEffect(() => {
+    // Check if we're loading a specific draft from dashboard
+    const draftToLoad = localStorage.getItem('test_draft_to_load');
+    if (draftToLoad) {
+      try {
+        const draftData = JSON.parse(draftToLoad);
+        setTestData({
+          title: draftData.title || '',
+          description: draftData.description || '',
+          duration_minutes: draftData.duration_minutes || 60,
+          questions: draftData.questions || []
+        });
+        setActiveStep(draftData.questions?.length > 0 ? 2 : 1);
+        localStorage.removeItem('test_draft_to_load');
+        toast.success('Draft loaded successfully!');
+      } catch (error) {
+        console.error('Error loading specific draft:', error);
+        toast.error('Failed to load draft');
+      }
+    } else {
+      // Load the auto-saved draft
+      loadDraft();
+    }
+  }, []);
 
   const getQuestionTypeIcon = (type) => {
     const typeConfig = questionTypes.find(t => t.value === type);
@@ -530,7 +594,7 @@ const CreateTestPage = () => {
                                   )
                                 ))}
                                 {currentQuestion.options.filter(opt => opt.trim()).length === 0 && (
-                                  <SelectItem value="" disabled>
+                                  <SelectItem value="__no_options__" disabled>
                                     <span className="text-gray-400">Add options above first</span>
                                   </SelectItem>
                                 )}
