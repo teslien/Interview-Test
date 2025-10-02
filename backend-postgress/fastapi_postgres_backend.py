@@ -994,6 +994,47 @@ async def get_my_invites(current_user: User = Depends(get_current_user)):
 
         return invites
 
+@api_router.get("/my-submissions")
+async def get_my_submissions(current_user: User = Depends(get_current_user)):
+    """Get test submissions for current applicant user with scores"""
+    async with db_pool.acquire() as conn:
+        submission_rows = await conn.fetch("""
+            SELECT ts.id, ts.invite_id, ts.test_id, ts.applicant_email, ts.started_at,
+                   ts.submitted_at, ts.final_score, ts.auto_score, ts.manual_score, 
+                   ts.scoring_status, ts.is_monitored,
+                   ti.applicant_name, ti.invite_token, ti.status as invite_status,
+                   t.title as test_title, t.description as test_description, t.duration_minutes
+            FROM test_submissions ts
+            JOIN test_invites ti ON ts.invite_id = ti.id
+            JOIN tests t ON ts.test_id = t.id
+            WHERE ts.applicant_email = $1
+            ORDER BY ts.submitted_at DESC
+        """, current_user.email)
+
+        submissions = []
+        for row in submission_rows:
+            submissions.append({
+                "id": str(row['id']),
+                "invite_id": str(row['invite_id']),
+                "test_id": str(row['test_id']),
+                "applicant_email": row['applicant_email'],
+                "applicant_name": row['applicant_name'],
+                "invite_token": str(row['invite_token']),
+                "invite_status": row['invite_status'],
+                "test_title": row['test_title'],
+                "test_description": row['test_description'],
+                "test_duration_minutes": row['duration_minutes'],
+                "started_at": row['started_at'],
+                "submitted_at": row['submitted_at'],
+                "final_score": row['final_score'],
+                "auto_score": row['auto_score'],
+                "manual_score": row['manual_score'],
+                "scoring_status": row['scoring_status'],
+                "is_monitored": row['is_monitored']
+            })
+
+        return submissions
+
 # WebRTC Signaling Routes (for video monitoring)
 @api_router.post("/webrtc/offer")
 async def handle_webrtc_offer(data: Dict[str, Any]):

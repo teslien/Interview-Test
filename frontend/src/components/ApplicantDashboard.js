@@ -28,23 +28,47 @@ const ApplicantDashboard = () => {
       console.log('Fetching applicant data...');
       console.log('API URL:', `${API}/my-invites`);
       
-      // Fetch user's test invitations
-      const invitesResponse = await axios.get(`${API}/my-invites`);
+      // Fetch user's test invitations and submissions in parallel
+      const [invitesResponse, submissionsResponse] = await Promise.all([
+        axios.get(`${API}/my-invites`),
+        axios.get(`${API}/my-submissions`)
+      ]);
+      
       const invites = invitesResponse.data;
+      const submissions = submissionsResponse.data;
       
       console.log('Invites received:', invites);
+      console.log('Submissions received:', submissions);
+      
+      // Create a map of submissions by invite_id for easy lookup
+      const submissionMap = {};
+      submissions.forEach(submission => {
+        submissionMap[submission.invite_id] = submission;
+      });
       
       // Separate upcoming and completed tests
       const upcoming = invites.filter(invite => 
         invite.status === 'sent' || invite.status === 'scheduled' || invite.status === 'in_progress'
       ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort by creation date (oldest first)
       
+      // For completed tests, merge with submission data to get scores
       const completed = invites.filter(invite => 
         invite.status === 'completed'
-      );
+      ).map(invite => {
+        const submission = submissionMap[invite.id];
+        return {
+          ...invite,
+          score: submission ? Math.round(submission.final_score || 0) : 0,
+          auto_score: submission ? submission.auto_score : null,
+          manual_score: submission ? submission.manual_score : null,
+          scoring_status: submission ? submission.scoring_status : null,
+          submitted_at: submission ? submission.submitted_at : null,
+          submission_id: submission ? submission.id : null
+        };
+      });
       
       console.log('Upcoming tests:', upcoming);
-      console.log('Completed tests:', completed);
+      console.log('Completed tests with scores:', completed);
       
       setUpcomingTests(upcoming);
       setCompletedTests(completed);
@@ -302,8 +326,8 @@ const ApplicantDashboard = () => {
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                           <Calendar className="h-4 w-4" />
                           <span>
-                            Completed: {test.completed_date 
-                              ? new Date(test.completed_date).toLocaleDateString()
+                            Completed: {test.submitted_at 
+                              ? new Date(test.submitted_at).toLocaleDateString()
                               : 'N/A'
                             }
                           </span>
@@ -320,6 +344,23 @@ const ApplicantDashboard = () => {
                             <span className="text-sm font-medium">{test.score || 0}%</span>
                           </div>
                         </div>
+                        {test.scoring_status && test.scoring_status !== 'auto_only' && (
+                          <div className="flex items-center space-x-2 text-xs">
+                            <Badge 
+                              variant={
+                                test.scoring_status === 'needs_review' ? 'destructive' :
+                                test.scoring_status === 'partially_reviewed' ? 'default' :
+                                'outline'
+                              }
+                              className="text-xs"
+                            >
+                              {test.scoring_status === 'needs_review' ? 'Under Review' :
+                               test.scoring_status === 'partially_reviewed' ? 'Partial Review' :
+                               test.scoring_status === 'fully_reviewed' ? 'Fully Reviewed' :
+                               test.scoring_status}
+                            </Badge>
+                          </div>
+                        )}
                         <Button 
                           variant="outline" 
                           className="w-full mt-4"
