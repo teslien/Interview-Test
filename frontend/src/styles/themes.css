@@ -468,6 +468,10 @@
   color: #cccccc !important;
 }
 
+.theme-premium .bg-background {
+  background: #000000 !important;
+}
+
 .theme-premium span {
   color: inherit !important;
 }
