@@ -532,15 +532,57 @@ async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depend
         )
 
 @api_router.get("/invites", response_model=List[TestInvite])
-async def get_invites(admin: User = Depends(get_admin_user)):
+async def get_invites(
+    admin: User = Depends(get_admin_user),
+    date_filter: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    email_search: Optional[str] = None
+):
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
+        # Build WHERE clause dynamically
+        where_conditions = ["invited_by = $1"]
+        params = [uuid.UUID(admin.id)]
+        param_count = 1
+        
+        if date_filter:
+            param_count += 1
+            where_conditions.append(f"DATE(created_at) = ${param_count}")
+            # Convert string to date
+            from datetime import datetime
+            params.append(datetime.fromisoformat(date_filter).date())
+        
+        if status_filter and status_filter != 'all':
+            if status_filter == 'active':
+                param_count += 1
+                param_count_2 = param_count + 1
+                where_conditions.append(f"status IN (${param_count}, ${param_count_2})")
+                params.extend(['sent', 'scheduled'])
+                param_count += 1  # Increment again since we used two parameters
+            elif status_filter == 'completed':
+                param_count += 1
+                where_conditions.append(f"status = ${param_count}")
+                params.append('completed')
+            else:
+                param_count += 1
+                where_conditions.append(f"status = ${param_count}")
+                params.append(status_filter)
+        
+        if email_search:
+            param_count += 1
+            where_conditions.append(f"LOWER(applicant_email) LIKE LOWER(${param_count})")
+            params.append(f"%{email_search}%")
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        query = f"""
             SELECT id, test_id, applicant_email, applicant_name, invited_by,
                    invite_token, scheduled_date, status, created_at
             FROM test_invites
-            WHERE invited_by = $1
+            WHERE {where_clause}
             ORDER BY created_at DESC
-        """, uuid.UUID(admin.id))
+        """
+        
+        rows = await conn.fetch(query, *params)
         
         return [TestInvite(
             id=str(row['id']),
@@ -879,12 +921,65 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         }
 
 # Results Routes
-@api_router.get("/results", response_model=List[Dict[str, Any]])
-async def get_results(admin: User = Depends(get_admin_user)):
-    """Get all test results"""
+@api_router.get("/results")
+async def get_results(
+    admin: User = Depends(get_admin_user),
+    page: int = 1,
+    limit: int = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    test_id: Optional[str] = None
+):
+    """Get test results with pagination and filtering"""
     async with db_pool.acquire() as conn:
-        # Get all submissions with invite and test details
-        submission_rows = await conn.fetch("""
+        # Build WHERE clause for filtering
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if start_date:
+            param_count += 1
+            where_conditions.append(f"ts.submitted_at >= ${param_count}")
+            # Convert string to datetime
+            from datetime import datetime
+            params.append(datetime.fromisoformat(start_date))
+            
+        if end_date:
+            param_count += 1
+            where_conditions.append(f"ts.submitted_at <= ${param_count}")
+            # Convert string to datetime and add end of day
+            from datetime import datetime, time
+            end_datetime = datetime.combine(datetime.fromisoformat(end_date).date(), time.max)
+            params.append(end_datetime)
+            
+        if test_id:
+            param_count += 1
+            where_conditions.append(f"ts.test_id = ${param_count}")
+            params.append(uuid.UUID(test_id))
+        
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # Calculate offset for pagination
+        offset = (page - 1) * limit
+        
+        # Get total count for pagination
+        count_query = f"""
+            SELECT COUNT(*) FROM test_submissions ts
+            JOIN test_invites ti ON ts.invite_id = ti.id
+            JOIN tests t ON ts.test_id = t.id
+            {where_clause}
+        """
+        total_count = await conn.fetchval(count_query, *params)
+        
+        # Get paginated results
+        param_count += 1
+        limit_param = param_count
+        param_count += 1
+        offset_param = param_count
+        
+        query = f"""
             SELECT
                 ts.id, ts.invite_id, ts.test_id, ts.applicant_email, ts.started_at,
                 ts.submitted_at, ts.final_score as score, ts.auto_score, ts.manual_score, 
@@ -893,8 +988,12 @@ async def get_results(admin: User = Depends(get_admin_user)):
             FROM test_submissions ts
             JOIN test_invites ti ON ts.invite_id = ti.id
             JOIN tests t ON ts.test_id = t.id
+            {where_clause}
             ORDER BY ts.submitted_at DESC
-        """)
+            LIMIT ${limit_param} OFFSET ${offset_param}
+        """
+        
+        submission_rows = await conn.fetch(query, *params, limit, offset)
 
         results = []
         for row in submission_rows:
@@ -913,7 +1012,17 @@ async def get_results(admin: User = Depends(get_admin_user)):
                 "is_monitored": row['is_monitored']
             })
 
-        return results
+        return {
+            "results": results,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "total_pages": (total_count + limit - 1) // limit,
+                "has_next": page * limit < total_count,
+                "has_prev": page > 1
+            }
+        }
 
 @api_router.get("/results/{submission_id}")
 async def get_result_details(submission_id: str, admin: User = Depends(get_admin_user)):

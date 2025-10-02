@@ -33,6 +33,20 @@ const AdminDashboard = () => {
   const [submissionDetails, setSubmissionDetails] = useState(null);
   const [scoringLoading, setScoringLoading] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState({ open: false, testId: null, testTitle: '' });
+  
+  // Pagination and filtering state for Results
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalResults, setTotalResults] = useState(0);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedTestFilter, setSelectedTestFilter] = useState('all');
+
+  // Filtering state for Invites
+  const [inviteDateFilter, setInviteDateFilter] = useState(new Date().toISOString().split('T')[0]); // Today's date
+  const [inviteStatusFilter, setInviteStatusFilter] = useState('all');
+  const [inviteEmailSearch, setInviteEmailSearch] = useState('');
 
   // Dialog state for viewing result details
   const [selectedResult, setSelectedResult] = useState(null);
@@ -70,6 +84,9 @@ const AdminDashboard = () => {
   // Edit test state
   const [showEditTest, setShowEditTest] = useState(false);
   const [editingTest, setEditingTest] = useState(null);
+  const [showAddQuestionToEdit, setShowAddQuestionToEdit] = useState(false);
+  const [showEditQuestion, setShowEditQuestion] = useState(false);
+  const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -81,6 +98,20 @@ const AdminDashboard = () => {
     
     return () => clearInterval(notificationInterval);
   }, []);
+
+  // Refetch results when pagination or filters change
+  useEffect(() => {
+    if (activeTab === 'results') {
+      fetchResults();
+    }
+  }, [currentPage, pageSize, startDate, endDate, selectedTestFilter, activeTab]);
+
+  // Refetch invites when filters change
+  useEffect(() => {
+    if (activeTab === 'invites') {
+      fetchInvites();
+    }
+  }, [inviteDateFilter, inviteStatusFilter, inviteEmailSearch, activeTab]);
 
   // Close notifications dropdown when clicking outside
   useEffect(() => {
@@ -94,23 +125,69 @@ const AdminDashboard = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showNotifications]);
 
+  const fetchInvites = async () => {
+    try {
+      const params = new URLSearchParams();
+      
+      if (inviteDateFilter) {
+        params.append('date_filter', inviteDateFilter);
+      }
+      
+      if (inviteStatusFilter && inviteStatusFilter !== 'all') {
+        params.append('status_filter', inviteStatusFilter);
+      }
+      
+      if (inviteEmailSearch.trim()) {
+        params.append('email_search', inviteEmailSearch.trim());
+      }
+      
+      const response = await axios.get(`${API}/invites?${params.toString()}`);
+      setInvites(response.data);
+    } catch (error) {
+      console.error('Failed to fetch invites:', error);
+      toast.error('Failed to load invites');
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [testsRes, invitesRes, resultsRes] = await Promise.all([
-        axios.get(`${API}/tests`),
-        axios.get(`${API}/invites`),
-        axios.get(`${API}/results`)
-      ]);
-      
+      const testsRes = await axios.get(`${API}/tests`);
       setTests(testsRes.data);
-      setInvites(invitesRes.data);
-      setResults(resultsRes.data);
+      
+      // Fetch invites with filters
+      await fetchInvites();
+      
+      // Fetch results separately with pagination
+      await fetchResults();
     } catch (error) {
       console.error('Failed to fetch data:', error);
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchResults = async (page = currentPage) => {
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: pageSize.toString()
+      });
+      
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      if (selectedTestFilter && selectedTestFilter !== 'all') params.append('test_id', selectedTestFilter);
+      
+      const resultsRes = await axios.get(`${API}/results?${params}`);
+      
+      setResults(resultsRes.data.results);
+      setCurrentPage(resultsRes.data.pagination.page);
+      setTotalPages(resultsRes.data.pagination.total_pages);
+      setTotalResults(resultsRes.data.pagination.total);
+    } catch (error) {
+      console.error('Failed to fetch results:', error);
+      toast.error('Failed to load results');
     }
   };
 
@@ -178,6 +255,41 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleFilterChange = () => {
+    setCurrentPage(1);
+    fetchResults(1);
+  };
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    fetchResults(page);
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+    fetchResults(1);
+  };
+
+  const clearFilters = () => {
+    setStartDate('');
+    setEndDate('');
+    setSelectedTestFilter('all');
+    setCurrentPage(1);
+    fetchResults(1);
+  };
+
+  // Invite filter handlers
+  const clearInviteFilters = () => {
+    setInviteDateFilter(new Date().toISOString().split('T')[0]); // Reset to today
+    setInviteStatusFilter('all');
+    setInviteEmailSearch('');
+  };
+
+  const handleInviteFilterChange = () => {
+    fetchInvites();
+  };
+
   const handleCreateTest = async () => {
     if (!newTest.title || !newTest.description || newTest.questions.length === 0) {
       toast.error('Please fill in all required fields and add at least one question');
@@ -242,6 +354,111 @@ const AdminDashboard = () => {
       points: 1
     });
     
+    toast.success('Question added successfully!');
+  };
+
+  const updateQuestion = () => {
+    if (!currentQuestion.question) {
+      toast.error('Please enter a question');
+      return;
+    }
+    
+    // Validation for multiple choice
+    if (currentQuestion.type === 'multiple_choice') {
+      const filledOptions = currentQuestion.options.filter(opt => opt.trim() !== '');
+      if (filledOptions.length < 2) {
+        toast.error('Please provide at least 2 options for multiple choice questions');
+        return;
+      }
+      if (!currentQuestion.correct_answer) {
+        toast.error('Please select the correct answer for multiple choice questions');
+        return;
+      }
+    }
+    
+    const updatedQuestion = { ...currentQuestion };
+    
+    // Clean up question based on type
+    if (updatedQuestion.type !== 'multiple_choice') {
+      delete updatedQuestion.options;
+      delete updatedQuestion.correct_answer;
+    }
+    if (updatedQuestion.type !== 'coding') {
+      delete updatedQuestion.expected_language;
+    }
+    
+    // Update in newTest or editingTest based on context
+    if (editingTest && editingQuestionIndex !== null) {
+      const updatedQuestions = [...editingTest.questions];
+      updatedQuestions[editingQuestionIndex] = updatedQuestion;
+      setEditingTest({ ...editingTest, questions: updatedQuestions });
+    } else if (editingQuestionIndex !== null) {
+      const updatedQuestions = [...newTest.questions];
+      updatedQuestions[editingQuestionIndex] = updatedQuestion;
+      setNewTest({ ...newTest, questions: updatedQuestions });
+    }
+    
+    // Reset form and close modal
+    setCurrentQuestion({
+      type: 'multiple_choice',
+      question: '',
+      options: ['', '', '', ''],
+      correct_answer: '',
+      expected_language: '',
+      points: 1
+    });
+    setShowEditQuestion(false);
+    setEditingQuestionIndex(null);
+    
+    toast.success('Question updated successfully!');
+  };
+
+  const addQuestionToEditingTest = () => {
+    if (!currentQuestion.question) {
+      toast.error('Please enter a question');
+      return;
+    }
+    
+    // Validation for multiple choice
+    if (currentQuestion.type === 'multiple_choice') {
+      const filledOptions = currentQuestion.options.filter(opt => opt.trim() !== '');
+      if (filledOptions.length < 2) {
+        toast.error('Please provide at least 2 options for multiple choice questions');
+        return;
+      }
+      if (!currentQuestion.correct_answer) {
+        toast.error('Please select the correct answer for multiple choice questions');
+        return;
+      }
+    }
+    
+    const question = { ...currentQuestion, id: Date.now().toString() };
+    
+    // Clean up question based on type
+    if (question.type !== 'multiple_choice') {
+      delete question.options;
+      delete question.correct_answer;
+    }
+    if (question.type !== 'coding') {
+      delete question.expected_language;
+    }
+    
+    setEditingTest(prev => ({
+      ...prev,
+      questions: [...prev.questions, question]
+    }));
+    
+    // Reset form
+    setCurrentQuestion({
+      type: 'multiple_choice',
+      question: '',
+      options: ['', '', '', ''],
+      correct_answer: '',
+      expected_language: '',
+      points: 1
+    });
+    
+    setShowAddQuestionToEdit(false);
     toast.success('Question added successfully!');
   };
 
@@ -717,6 +934,68 @@ const AdminDashboard = () => {
                 Send Invite
               </Button>
             </div>
+
+            {/* Invite Filters */}
+            <Card className="glass-effect border-0 shadow-lg">
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-date-filter">Date Filter</Label>
+                    <Input
+                      id="invite-date-filter"
+                      type="date"
+                      value={inviteDateFilter}
+                      onChange={(e) => setInviteDateFilter(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-status-filter">Status Filter</Label>
+                    <Select value={inviteStatusFilter} onValueChange={setInviteStatusFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Invites</SelectItem>
+                        <SelectItem value="active">Active (Pending)</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="sent">Sent</SelectItem>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="invite-email-search">Search by Email</Label>
+                    <Input
+                      id="invite-email-search"
+                      type="text"
+                      placeholder="Enter email to search..."
+                      value={inviteEmailSearch}
+                      onChange={(e) => setInviteEmailSearch(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleInviteFilterChange}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      Apply Filters
+                    </Button>
+                    <Button
+                      onClick={clearInviteFilters}
+                      variant="outline"
+                      className="border-gray-300 hover:bg-gray-50"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             
             <div className="grid grid-cols-1 gap-4">
               {invites.map((invite) => (
@@ -766,8 +1045,68 @@ const AdminDashboard = () => {
           
           {/* Results Tab */}
           <TabsContent value="results" className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">Test Results</h2>
-            
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Test Results</h2>
+              <div className="text-sm text-gray-600">
+                {totalResults} total results
+              </div>
+            </div>
+
+            {/* Filters */}
+            <Card className="glass-effect border-0 shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-lg">Filters</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <Label htmlFor="start-date" className="text-sm font-medium">Start Date</Label>
+                    <Input
+                      id="start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="end-date" className="text-sm font-medium">End Date</Label>
+                    <Input
+                      id="end-date"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="test-filter" className="text-sm font-medium">Test</Label>
+                    <Select value={selectedTestFilter} onValueChange={setSelectedTestFilter}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="All tests" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All tests</SelectItem>
+                        {tests.map((test) => (
+                          <SelectItem key={test.id} value={test.id}>
+                            {test.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end space-x-2">
+                    <Button onClick={handleFilterChange} className="flex-1">
+                      Apply Filters
+                    </Button>
+                    <Button onClick={clearFilters} variant="outline">
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="grid grid-cols-1 gap-4">
               {results.map((result, index) => (
                 <Card key={index} className="glass-effect border-0 shadow-lg">
@@ -821,6 +1160,80 @@ const AdminDashboard = () => {
                 </div>
               )}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Card className="glass-effect border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">
+                        Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalResults)} of {totalResults} results
+                      </span>
+                      <Select value={pageSize.toString()} onValueChange={(value) => handlePageSizeChange(parseInt(value))}>
+                        <SelectTrigger className="w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-gray-600">per page</span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Previous
+                      </Button>
+                      
+                      <div className="flex space-x-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          
+                          return (
+                            <Button
+                              key={pageNum}
+                              onClick={() => handlePageChange(pageNum)}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              className="w-8 h-8 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      
+                      <Button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Scoring Tab */}
@@ -1022,23 +1435,58 @@ const AdminDashboard = () => {
               {/* Questions List */}
               <div>
                 <Label>Questions ({newTest.questions.length})</Label>
-                <div className="space-y-2 mt-2">
+                <div className="space-y-3 mt-2">
                   {newTest.questions.map((q, index) => (
-                    <div key={index} className="bg-gray-50 p-3 rounded-lg flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{q.question}</p>
-                        <p className="text-sm text-gray-600 capitalize">{q.type.replace('_', ' ')} • {q.points} points</p>
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 mb-1">{q.question}</p>
+                          <p className="text-sm text-gray-600 capitalize mb-2">
+                            {q.type.replace('_', ' ')} • {q.points} points
+                          </p>
+                          {q.type === 'multiple_choice' && q.options && (
+                            <div className="text-xs text-gray-500">
+                              <strong>Options:</strong> {q.options.join(', ')}
+                            </div>
+                          )}
+                          {q.correct_answer && (
+                            <div className="text-xs text-green-600 mt-1">
+                              <strong>Correct Answer:</strong> {q.correct_answer}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingQuestionIndex(index);
+                              setCurrentQuestion(q);
+                              setShowEditQuestion(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => removeQuestion(index)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => removeQuestion(index)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </div>
                   ))}
+                  {newTest.questions.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <FileText className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                      <p>No questions added yet</p>
+                      <p className="text-sm">Add your first question below</p>
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -1228,24 +1676,38 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Edit Test Modal */}
+      {/* Edit Test Offcanvas */}
       {showEditTest && editingTest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b">
-              <h2 className="text-xl font-semibold">Edit Test</h2>
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => {
+              setShowEditTest(false);
+              setEditingTest(null);
+            }}
+          />
+          
+          {/* Offcanvas Panel */}
+          <div className="fixed top-0 right-0 h-full w-full max-w-2xl bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Test</h2>
               <button
                 onClick={() => {
                   setShowEditTest(false);
                   setEditingTest(null);
                 }}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 transition-colors"
               >
-                ×
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
+            {/* Content */}
+            <div className="p-6 space-y-6">
               <div>
                 <Label htmlFor="edit-test-title">Test Title</Label>
                 <Input
@@ -1253,6 +1715,7 @@ const AdminDashboard = () => {
                   value={editingTest.title}
                   onChange={(e) => setEditingTest({ ...editingTest, title: e.target.value })}
                   placeholder="Enter test title"
+                  className="mt-1"
                 />
               </div>
               
@@ -1263,6 +1726,8 @@ const AdminDashboard = () => {
                   value={editingTest.description}
                   onChange={(e) => setEditingTest({ ...editingTest, description: e.target.value })}
                   placeholder="Enter test description"
+                  className="mt-1"
+                  rows={3}
                 />
               </div>
               
@@ -1274,44 +1739,84 @@ const AdminDashboard = () => {
                   value={editingTest.duration_minutes}
                   onChange={(e) => setEditingTest({ ...editingTest, duration_minutes: parseInt(e.target.value) })}
                   min="1"
+                  className="mt-1"
                 />
               </div>
               
               {/* Questions List */}
               <div>
-                <Label>Questions ({editingTest.questions.length})</Label>
-                <div className="space-y-2 mt-2">
+                <div className="flex items-center justify-between mb-4">
+                  <Label className="text-lg font-medium">Questions ({editingTest.questions.length})</Label>
+                  <Button
+                    onClick={() => setShowAddQuestionToEdit(true)}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Question
+                  </Button>
+                </div>
+                <div className="space-y-3">
                   {editingTest.questions.map((q, index) => (
-                    <div key={index} className="bg-gray-50 p-3 rounded-lg flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{q.question}</p>
-                        <p className="text-sm text-gray-600 capitalize">
-                          {q.type.replace('_', ' ')} • {q.points} points
-                        </p>
-                        {q.type === 'multiple_choice' && q.options && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            Options: {q.options.join(', ')}
-                          </div>
-                        )}
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 mb-1">{q.question}</p>
+                          <p className="text-sm text-gray-600 capitalize mb-2">
+                            {q.type.replace('_', ' ')} • {q.points} points
+                          </p>
+                          {q.type === 'multiple_choice' && q.options && (
+                            <div className="text-xs text-gray-500">
+                              <strong>Options:</strong> {q.options.join(', ')}
+                            </div>
+                          )}
+                          {q.correct_answer && (
+                            <div className="text-xs text-green-600 mt-1">
+                              <strong>Correct Answer:</strong> {q.correct_answer}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingQuestionIndex(index);
+                              setCurrentQuestion(q);
+                              setShowEditQuestion(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const updatedQuestions = editingTest.questions.filter((_, i) => i !== index);
+                              setEditingTest({ ...editingTest, questions: updatedQuestions });
+                            }}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const updatedQuestions = editingTest.questions.filter((_, i) => i !== index);
-                          setEditingTest({ ...editingTest, questions: updatedQuestions });
-                        }}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </div>
                   ))}
+                  {editingTest.questions.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <FileText className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                      <p>No questions added yet</p>
+                      <p className="text-sm">Click "Add Question" to get started</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
             
-            <div className="p-6 border-t flex space-x-3">
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3">
               <Button
                 onClick={() => {
                   setShowEditTest(false);
@@ -1330,7 +1835,7 @@ const AdminDashboard = () => {
               </Button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Custom Modal for Result Details */}
@@ -1452,6 +1957,306 @@ const AdminDashboard = () => {
             )}
           </div>
         </>
+      )}
+
+      {/* Edit Question Modal */}
+      {showEditQuestion && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold">Edit Question</h2>
+              <button
+                onClick={() => {
+                  setShowEditQuestion(false);
+                  setEditingQuestionIndex(null);
+                  setCurrentQuestion({
+                    type: 'multiple_choice',
+                    question: '',
+                    options: ['', '', '', ''],
+                    correct_answer: '',
+                    expected_language: '',
+                    points: 1
+                  });
+                }}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <Label>Question Type</Label>
+                <Select
+                  value={currentQuestion.type}
+                  onValueChange={(value) => setCurrentQuestion({ ...currentQuestion, type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                    <SelectItem value="essay">Essay</SelectItem>
+                    <SelectItem value="coding">Coding</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-question-text">Question</Label>
+                <Textarea
+                  id="edit-question-text"
+                  value={currentQuestion.question}
+                  onChange={(e) => setCurrentQuestion({ ...currentQuestion, question: e.target.value })}
+                  placeholder="Enter your question"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-question-points">Points</Label>
+                <Input
+                  id="edit-question-points"
+                  type="number"
+                  min="1"
+                  value={currentQuestion.points}
+                  onChange={(e) => setCurrentQuestion({ ...currentQuestion, points: parseInt(e.target.value) || 1 })}
+                />
+              </div>
+
+              {currentQuestion.type === 'multiple_choice' && (
+                <>
+                  <div>
+                    <Label>Options</Label>
+                    <div className="space-y-2 mt-2">
+                      {currentQuestion.options.map((option, index) => (
+                        <Input
+                          key={index}
+                          value={option}
+                          onChange={(e) => {
+                            const newOptions = [...currentQuestion.options];
+                            newOptions[index] = e.target.value;
+                            setCurrentQuestion({ ...currentQuestion, options: newOptions });
+                          }}
+                          placeholder={`Option ${index + 1}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Correct Answer</Label>
+                    <Select
+                      value={currentQuestion.correct_answer}
+                      onValueChange={(value) => setCurrentQuestion({ ...currentQuestion, correct_answer: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select correct answer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currentQuestion.options.map((option, index) => (
+                          option.trim() && (
+                            <SelectItem key={index} value={option}>
+                              {option}
+                            </SelectItem>
+                          )
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {currentQuestion.type === 'coding' && (
+                <div>
+                  <Label htmlFor="edit-expected-language">Expected Language</Label>
+                  <Input
+                    id="edit-expected-language"
+                    value={currentQuestion.expected_language}
+                    onChange={(e) => setCurrentQuestion({ ...currentQuestion, expected_language: e.target.value })}
+                    placeholder="e.g., JavaScript, Python, Java"
+                  />
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t flex space-x-3">
+              <Button
+                onClick={() => {
+                  setShowEditQuestion(false);
+                  setEditingQuestionIndex(null);
+                  setCurrentQuestion({
+                    type: 'multiple_choice',
+                    question: '',
+                    options: ['', '', '', ''],
+                    correct_answer: '',
+                    expected_language: '',
+                    points: 1
+                  });
+                }}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={updateQuestion}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+              >
+                Update Question
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Question to Edit Test Modal */}
+      {showAddQuestionToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold">Add Question to Test</h2>
+              <button
+                onClick={() => {
+                  setShowAddQuestionToEdit(false);
+                  setCurrentQuestion({
+                    type: 'multiple_choice',
+                    question: '',
+                    options: ['', '', '', ''],
+                    correct_answer: '',
+                    expected_language: '',
+                    points: 1
+                  });
+                }}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <Label>Question Type</Label>
+                <Select
+                  value={currentQuestion.type}
+                  onValueChange={(value) => setCurrentQuestion({ ...currentQuestion, type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                    <SelectItem value="essay">Essay</SelectItem>
+                    <SelectItem value="coding">Coding</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="add-question-text">Question</Label>
+                <Textarea
+                  id="add-question-text"
+                  value={currentQuestion.question}
+                  onChange={(e) => setCurrentQuestion({ ...currentQuestion, question: e.target.value })}
+                  placeholder="Enter your question"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="add-question-points">Points</Label>
+                <Input
+                  id="add-question-points"
+                  type="number"
+                  min="1"
+                  value={currentQuestion.points}
+                  onChange={(e) => setCurrentQuestion({ ...currentQuestion, points: parseInt(e.target.value) || 1 })}
+                />
+              </div>
+
+              {currentQuestion.type === 'multiple_choice' && (
+                <>
+                  <div>
+                    <Label>Options</Label>
+                    <div className="space-y-2 mt-2">
+                      {currentQuestion.options.map((option, index) => (
+                        <Input
+                          key={index}
+                          value={option}
+                          onChange={(e) => {
+                            const newOptions = [...currentQuestion.options];
+                            newOptions[index] = e.target.value;
+                            setCurrentQuestion({ ...currentQuestion, options: newOptions });
+                          }}
+                          placeholder={`Option ${index + 1}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Correct Answer</Label>
+                    <Select
+                      value={currentQuestion.correct_answer}
+                      onValueChange={(value) => setCurrentQuestion({ ...currentQuestion, correct_answer: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select correct answer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currentQuestion.options.map((option, index) => (
+                          option.trim() && (
+                            <SelectItem key={index} value={option}>
+                              {option}
+                            </SelectItem>
+                          )
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {currentQuestion.type === 'coding' && (
+                <div>
+                  <Label htmlFor="add-expected-language">Expected Language</Label>
+                  <Input
+                    id="add-expected-language"
+                    value={currentQuestion.expected_language}
+                    onChange={(e) => setCurrentQuestion({ ...currentQuestion, expected_language: e.target.value })}
+                    placeholder="e.g., JavaScript, Python, Java"
+                  />
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t flex space-x-3">
+              <Button
+                onClick={() => {
+                  setShowAddQuestionToEdit(false);
+                  setCurrentQuestion({
+                    type: 'multiple_choice',
+                    question: '',
+                    options: ['', '', '', ''],
+                    correct_answer: '',
+                    expected_language: '',
+                    points: 1
+                  });
+                }}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={addQuestionToEditingTest}
+                className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
+              >
+                Add Question
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Confirmation Dialog */}
