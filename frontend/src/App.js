@@ -12,6 +12,7 @@ import './styles/themes.css';
 import SimpleLoginFixed from './components/SimpleLoginFixed';
 import AdminDashboard from './components/AdminDashboard';
 import ApplicantDashboard from './components/ApplicantDashboard';
+import CreateTestPage from './components/CreateTestPage';
 import TestInvite from './components/TestInvite';
 import WorkingTakeTest from './components/WorkingTakeTest';
 import DebugTakeTest from './components/DebugTakeTest';
@@ -167,6 +168,12 @@ function App() {
             <Route path="/admin" element={
               <ProtectedRoute requiredRole="admin">
                 <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/admin/create-test" element={
+              <ProtectedRoute requiredRole="admin">
+                <CreateTestPage />
               </ProtectedRoute>
             } />
             

@@ -474,6 +474,78 @@ async def delete_test(test_id: str, admin: User = Depends(get_admin_user)):
 
         return {"message": f"Test '{test['title']}' has been deleted successfully"}
 
+@api_router.delete("/tests/{test_id}/force")
+async def force_delete_test(test_id: str, admin: User = Depends(get_admin_user)):
+    """Force delete a test and all associated data including active invites"""
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            # Check if test exists
+            test = await conn.fetchrow(
+                "SELECT id, title FROM tests WHERE id = $1",
+                uuid.UUID(test_id)
+            )
+
+            if not test:
+                raise HTTPException(status_code=404, detail="Test not found")
+
+            # Get all invites for this test
+            invites = await conn.fetch(
+                "SELECT id FROM test_invites WHERE test_id = $1",
+                uuid.UUID(test_id)
+            )
+
+            # Delete in proper order to handle foreign key constraints
+            
+            # 1. Delete test answers for submissions related to this test
+            await conn.execute("""
+                DELETE FROM test_answers 
+                WHERE submission_id IN (
+                    SELECT id FROM test_submissions 
+                    WHERE test_id = $1
+                )
+            """, uuid.UUID(test_id))
+
+            # 2. Delete test submissions
+            await conn.execute("""
+                DELETE FROM test_submissions 
+                WHERE test_id = $1
+            """, uuid.UUID(test_id))
+
+            # 3. Delete WebRTC sessions for invites of this test
+            await conn.execute("""
+                DELETE FROM active_webrtc_sessions 
+                WHERE invite_id IN (
+                    SELECT id FROM test_invites 
+                    WHERE test_id = $1
+                )
+            """, uuid.UUID(test_id))
+
+            # 4. Get count of invites before deleting
+            deleted_invites_count = await conn.fetchval("""
+                SELECT COUNT(*) FROM test_invites WHERE test_id = $1
+            """, uuid.UUID(test_id))
+            
+            # Delete test invites
+            await conn.execute("""
+                DELETE FROM test_invites WHERE test_id = $1
+            """, uuid.UUID(test_id))
+
+            # 5. Delete questions
+            await conn.execute("""
+                DELETE FROM questions WHERE test_id = $1
+            """, uuid.UUID(test_id))
+
+            # 6. Finally delete the test
+            await conn.execute("""
+                DELETE FROM tests WHERE id = $1
+            """, uuid.UUID(test_id))
+
+            return {
+                "message": f"Test '{test['title']}' and all associated data have been force deleted successfully",
+                "deleted_invites": deleted_invites_count or 0,
+                "force_deleted": True
+            }
+
 @api_router.put("/tests/{test_id}", response_model=Test)
 async def update_test(test_id: str, test_update: TestCreate, admin: User = Depends(get_admin_user)):
     """Update an existing test"""

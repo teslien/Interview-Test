@@ -12,8 +12,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
-import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing, CheckSquare, AlertCircle, Settings, Mail, UserCheck, UserX, Shield } from 'lucide-react';
+import { Plus, Send, Eye, Users, FileText, Clock, Video, LogOut, Trash2, Edit, Bell, BellRing, CheckSquare, AlertCircle, Settings, Mail, UserCheck, UserX, Shield, MoreVertical, AlertTriangle } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../components/ui/alert-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import BrandIcon from '../components/ui/BrandIcon';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -45,7 +46,7 @@ const AdminDashboard = () => {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [submissionDetails, setSubmissionDetails] = useState(null);
   const [scoringLoading, setScoringLoading] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, testId: null, testTitle: '' });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, testId: null, testTitle: '', isForce: false });
   const [deleteApplicantDialog, setDeleteApplicantDialog] = useState({ open: false, applicantId: null, applicantName: '', applicantEmail: '' });
   const [themeSettings, setThemeSettings] = useState({
     themeName: 'classic',
@@ -105,6 +106,10 @@ const AdminDashboard = () => {
   const [showAddQuestionToEdit, setShowAddQuestionToEdit] = useState(false);
   const [showEditQuestion, setShowEditQuestion] = useState(false);
   const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
+  
+  // Test filtering state
+  const [testFilter, setTestFilter] = useState('multiple_choice');
+  const [testSearchQuery, setTestSearchQuery] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -614,21 +619,54 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteTest = (testId, testTitle) => {
-    setDeleteDialog({ open: true, testId, testTitle });
+  const handleDeleteTest = (testId, testTitle, force = false) => {
+    setDeleteDialog({ open: true, testId, testTitle, isForce: force });
   };
 
   const confirmDeleteTest = async () => {
     try {
-      await axios.delete(`${API}/tests/${deleteDialog.testId}`);
-      toast.success('Test deleted successfully!');
+      const endpoint = deleteDialog.isForce 
+        ? `${API}/tests/${deleteDialog.testId}/force`
+        : `${API}/tests/${deleteDialog.testId}`;
+      
+      const response = await axios.delete(endpoint);
+      
+      if (deleteDialog.isForce) {
+        toast.success(`Test force deleted! ${response.data.deleted_invites} invites were also removed.`);
+      } else {
+        toast.success('Test deleted successfully!');
+      }
+      
       fetchData();
     } catch (error) {
       console.error('Failed to delete test:', error);
-      toast.error('Failed to delete test: ' + (error.response?.data?.detail || error.message));
+      const errorMessage = error.response?.data?.detail || error.message;
+      
+      // If regular delete fails due to active invites, show force delete option
+      if (!deleteDialog.isForce && errorMessage.includes('active invitations')) {
+        toast.error('Cannot delete test with active invitations. Use Force Delete to remove all data.');
+      } else {
+        toast.error('Failed to delete test: ' + errorMessage);
+      }
     } finally {
-      setDeleteDialog({ open: false, testId: null, testTitle: '' });
+      setDeleteDialog({ open: false, testId: null, testTitle: '', isForce: false });
     }
+  };
+
+  // Filter tests based on question type and search query
+  const getFilteredTests = () => {
+    return tests.filter(test => {
+      // Filter by question type
+      const hasFilteredQuestions = testFilter === 'all' || 
+        test.questions.some(question => question.type === testFilter);
+      
+      // Filter by search query
+      const matchesSearch = testSearchQuery === '' ||
+        test.title.toLowerCase().includes(testSearchQuery.toLowerCase()) ||
+        test.description.toLowerCase().includes(testSearchQuery.toLowerCase());
+      
+      return hasFilteredQuestions && matchesSearch;
+    });
   };
 
   const handleViewResultDetails = async (result) => {
@@ -894,7 +932,7 @@ const AdminDashboard = () => {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <Button
-                    onClick={() => setShowCreateTest(true)}
+                    onClick={() => navigate('/admin/create-test')}
                     className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white h-20 flex flex-col items-center justify-center space-y-2"
                     data-testid="create-test-button"
                   >
@@ -972,7 +1010,7 @@ const AdminDashboard = () => {
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-900">Manage Tests</h2>
               <Button
-                onClick={() => setShowCreateTest(true)}
+                onClick={() => navigate('/admin/create-test')}
                 className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
                 data-testid="create-test-button-tab"
               >
@@ -980,9 +1018,73 @@ const AdminDashboard = () => {
                 Create Test
               </Button>
             </div>
+
+            {/* Filter Controls */}
+            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-gray-50 rounded-lg border">
+              <div className="flex-1">
+                <Label htmlFor="test-search" className="text-sm font-medium text-gray-700 mb-1 block">
+                  Search Tests
+                </Label>
+                <Input
+                  id="test-search"
+                  placeholder="Search by title or description..."
+                  value={testSearchQuery}
+                  onChange={(e) => setTestSearchQuery(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="sm:w-64">
+                <Label htmlFor="test-filter" className="text-sm font-medium text-gray-700 mb-1 block">
+                  Filter by Question Type
+                </Label>
+                <Select value={testFilter} onValueChange={setTestFilter}>
+                  <SelectTrigger id="test-filter">
+                    <SelectValue placeholder="Select question type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Question Types</SelectItem>
+                    <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+                    <SelectItem value="coding">Coding Questions</SelectItem>
+                    <SelectItem value="essay">Essay Questions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Results Counter */}
+            {tests.length > 0 && (
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Showing {getFilteredTests().length} of {tests.length} test{tests.length !== 1 ? 's' : ''}
+                  {testFilter !== 'all' && (
+                    <span className="ml-1">
+                      with {testFilter.replace('_', ' ')} questions
+                    </span>
+                  )}
+                  {testSearchQuery && (
+                    <span className="ml-1">
+                      matching "{testSearchQuery}"
+                    </span>
+                  )}
+                </span>
+                {(testFilter !== 'all' || testSearchQuery) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setTestFilter('all');
+                      setTestSearchQuery('');
+                    }}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    Clear all filters
+                  </Button>
+                )}
+              </div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tests.map((test) => (
+              {getFilteredTests().map((test) => (
                 <Card key={test.id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover">
                   <CardHeader>
                     <CardTitle className="text-lg">{test.title}</CardTitle>
@@ -1013,25 +1115,61 @@ const AdminDashboard = () => {
                         <Edit className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="text-red-600 hover:text-red-700"
-                        onClick={() => handleDeleteTest(test.id, test.title)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem 
+                            onClick={() => handleDeleteTest(test.id, test.title, false)}
+                            className="text-red-600 focus:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Test
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem 
+                            onClick={() => handleDeleteTest(test.id, test.title, true)}
+                            className="text-red-700 focus:text-red-800 focus:bg-red-50"
+                          >
+                            <AlertTriangle className="h-4 w-4 mr-2" />
+                            Force Delete All
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+              {getFilteredTests().length === 0 && tests.length > 0 && (
+                <div className="col-span-full text-center py-12">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No tests match your filters</h3>
+                  <p className="text-gray-600 mb-4">Try adjusting your search or filter criteria</p>
+                  <Button
+                    onClick={() => {
+                      setTestFilter('all');
+                      setTestSearchQuery('');
+                    }}
+                    variant="outline"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
               {tests.length === 0 && (
                 <div className="col-span-full text-center py-12">
                   <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No tests created yet</h3>
                   <p className="text-gray-600 mb-4">Create your first test to get started with assessments</p>
                   <Button
-                    onClick={() => setShowCreateTest(true)}
+                    onClick={() => navigate('/admin/create-test')}
                     className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -2749,17 +2887,53 @@ const AdminDashboard = () => {
       <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Test</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{deleteDialog.testTitle}"? This action cannot be undone.
+            <AlertDialogTitle className={deleteDialog.isForce ? "text-red-700" : ""}>
+              {deleteDialog.isForce ? (
+                <>
+                  <AlertTriangle className="h-5 w-5 inline mr-2" />
+                  Force Delete Test
+                </>
+              ) : (
+                "Delete Test"
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              {deleteDialog.isForce ? (
+                <>
+                  <p>Are you sure you want to <strong className="text-red-700">force delete</strong> "{deleteDialog.testTitle}"?</p>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-red-800 font-medium mb-2">⚠️ This will permanently delete:</p>
+                    <ul className="text-red-700 text-sm space-y-1 ml-4 list-disc">
+                      <li>The test and all its questions</li>
+                      <li>All test invitations (including active ones)</li>
+                      <li>All test submissions and answers</li>
+                      <li>All video monitoring sessions</li>
+                      <li>All associated data</li>
+                    </ul>
+                    <p className="text-red-800 font-medium mt-2">This action cannot be undone!</p>
+                  </div>
+                </>
+              ) : (
+                <p>Are you sure you want to delete "{deleteDialog.testTitle}"? This action cannot be undone.</p>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteDialog({ open: false, testId: null, testTitle: '' })}>
+            <AlertDialogCancel onClick={() => setDeleteDialog({ open: false, testId: null, testTitle: '', isForce: false })}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteTest} className="bg-red-600 hover:bg-red-700">
-              Delete
+            <AlertDialogAction 
+              onClick={confirmDeleteTest} 
+              className={deleteDialog.isForce ? "bg-red-700 hover:bg-red-800" : "bg-red-600 hover:bg-red-700"}
+            >
+              {deleteDialog.isForce ? (
+                <>
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Force Delete Everything
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
