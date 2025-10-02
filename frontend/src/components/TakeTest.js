@@ -47,6 +47,25 @@ const TakeTest = () => {
 
   useEffect(() => {
     fetchTestDetails();
+    
+    // Add cleanup function for page unload
+    const handleBeforeUnload = () => {
+      // Stop video stream
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      // Close WebRTC connection
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      // End WebRTC session
+      if (inviteId) {
+        navigator.sendBeacon(`${API}/webrtc/end-session/${inviteId}`);
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
       // Cleanup video stream and WebRTC connection
       if (videoStream) {
@@ -59,6 +78,8 @@ const TakeTest = () => {
       if (inviteId) {
         axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
       }
+      // Remove event listener
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [token]);
 

@@ -39,6 +39,25 @@ const WorkingTakeTest = () => {
 
   useEffect(() => {
     fetchTestDetails();
+    
+    // Add cleanup function for page unload
+    const handleBeforeUnload = () => {
+      // Stop video stream
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      // Close WebRTC connection
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      // End WebRTC session
+      if (inviteId) {
+        navigator.sendBeacon(`${API}/webrtc/end-session/${inviteId}`);
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
       // Cleanup video stream
       if (videoStream) {
@@ -52,6 +71,8 @@ const WorkingTakeTest = () => {
       if (inviteId) {
         axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
       }
+      // Remove event listener
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [token]);
 
@@ -369,6 +390,16 @@ const WorkingTakeTest = () => {
       // End WebRTC session
       if (inviteId) {
         await axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
+      }
+      
+      // Stop video stream and close peer connection
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        setVideoStream(null);
+      }
+      if (peerConnection) {
+        peerConnection.close();
+        setPeerConnection(null);
       }
       
       toast.success('Test submitted successfully! Score: ' + (response.data.score || 0) + '%');

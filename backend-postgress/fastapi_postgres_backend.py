@@ -112,6 +112,7 @@ class AutoGenerateTest(BaseModel):
     topic: str
     questionCount: int
     geminiApiKey: str
+    level: str
 
 class TestAnswer(BaseModel):
     question_id: str
@@ -524,6 +525,16 @@ async def auto_generate_test(data: AutoGenerateTest, admin: User = Depends(get_a
             ]
         }
         
+        # Map level to detailed instructions
+        level_instructions = {
+            "beginner": "Beginner level - Focus on basic concepts, definitions, and fundamental knowledge. Questions should test understanding of core principles and simple applications.",
+            "intermediate": "Intermediate level - Focus on practical applications, moderate complexity scenarios, and problem-solving skills. Questions should test ability to apply knowledge in real-world situations.",
+            "advanced": "Advanced level - Focus on complex scenarios, expert-level knowledge, and sophisticated problem-solving. Questions should test deep understanding and ability to handle challenging situations.",
+            "mixed": "Mixed difficulty - Include a balanced combination of beginner (30%), intermediate (50%), and advanced (20%) level questions to test a wide range of knowledge and skills."
+        }
+        
+        level_instruction = level_instructions.get(data.level, level_instructions["intermediate"])
+        
         # Create the prompt
         prompt = f"""
 Create a comprehensive {data.topic} assessment test with exactly {data.questionCount} multiple choice questions.
@@ -533,18 +544,20 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
 
 Requirements:
 - Title: Create a professional title for the {data.topic} test
-- Description: Write a brief description (2-3 sentences) explaining what the test covers
+- Description: Write a ONE-LINE description (maximum 100 characters) that clearly explains what the test covers
 - Duration: Set appropriate duration in minutes (estimate 2-3 minutes per question)
 - Questions: Create exactly {data.questionCount} multiple choice questions
 - Each question must have exactly 4 options (A, B, C, D)
-- Questions should range from beginner to advanced level
+- Difficulty Level: {level_instruction}
 - Each question worth 1-5 points based on difficulty
 - Cover different aspects of {data.topic}
 - Ensure correct_answer matches exactly one of the options
 - Make questions practical and relevant to real-world scenarios
+- Use clear, concise language in questions and options
 
 Topic: {data.topic}
 Number of questions: {data.questionCount}
+Difficulty level: {data.level}
 
 Return ONLY the JSON object, no additional text or formatting.
 """
@@ -1252,13 +1265,27 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
             scoring_status = 'auto_only'
             final_score = auto_score_percentage
 
+        # Check if this test was monitored (has active WebRTC session)
+        webrtc_session = await conn.fetchrow("""
+            SELECT status FROM active_webrtc_sessions 
+            WHERE invite_id = $1 AND status IN ('connected', 'offer_sent')
+        """, invite['id'])
+        
+        is_monitored = webrtc_session is not None
+        
+        # Get the actual started_at timestamp from the invite
+        started_at = invite.get('started_at')
+        if not started_at:
+            # If no started_at in invite, use current time as fallback
+            started_at = datetime.now(timezone.utc)
+        
         # Insert submission
         submission_id = str(uuid.uuid4())
         await conn.execute("""
             INSERT INTO test_submissions (id, invite_id, test_id, applicant_email, auto_score, final_score, scoring_status, started_at, submitted_at, is_monitored)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """, uuid.UUID(submission_id), invite['id'], invite['test_id'],
-            invite['applicant_email'], auto_score_percentage, final_score, scoring_status, invite.get('started_at'), datetime.now(timezone.utc), False)
+            invite['applicant_email'], auto_score_percentage, final_score, scoring_status, started_at, datetime.now(timezone.utc), is_monitored)
 
         # Create a map of submitted answers for easy lookup
         submitted_answers = {}
@@ -1284,6 +1311,13 @@ async def submit_test(token: str, submission: TestSubmissionCreate):
         await conn.execute("""
             UPDATE test_invites SET status = 'completed' WHERE invite_token = $1
         """, token)
+
+        # End any active WebRTC session for this invite
+        await conn.execute("""
+            UPDATE active_webrtc_sessions 
+            SET status = 'ended', ended_at = $1 
+            WHERE invite_id = $2 AND status IN ('connected', 'offer_sent', 'initializing')
+        """, datetime.now(timezone.utc), invite['id'])
 
         return {
             "message": "Test submitted successfully", 
@@ -1838,6 +1872,13 @@ async def handle_webrtc_answer(data: Dict[str, Any]):
                 SET applicant_answer_id = $1, status = 'connected'
                 WHERE invite_id = $2
             """, uuid.UUID(answer_id), invite_uuid)
+            
+            # Update any existing submission to mark it as monitored
+            await conn.execute("""
+                UPDATE test_submissions
+                SET is_monitored = true
+                WHERE invite_id = $1
+            """, invite_uuid)
 
         return {"answer_id": answer_id, "status": "answer_sent"}
     except Exception as e:
@@ -1887,6 +1928,20 @@ async def mark_notification_read(notification_id: str, current_user: User = Depe
         """, uuid.UUID(notification_id), uuid.UUID(current_user.id))
         
         return {"message": "Notification marked as read"}
+
+@api_router.delete("/admin/notifications/clear-all")
+async def clear_all_notifications(current_user: User = Depends(get_current_user)):
+    """Clear all notifications for the current admin user"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    async with db_pool.acquire() as conn:
+        result = await conn.execute("""
+            DELETE FROM admin_notifications
+            WHERE admin_id = $1
+        """, uuid.UUID(current_user.id))
+        
+        return {"message": "All notifications cleared"}
 
 @api_router.get("/admin/notifications/unread-count")
 async def get_unread_notifications_count(current_user: User = Depends(get_current_user)):
@@ -2237,6 +2292,32 @@ async def start_webrtc_session(invite_id: str):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
+
+@api_router.post("/admin/fix-monitoring-status")
+async def fix_monitoring_status(admin: User = Depends(get_admin_user)):
+    """Fix monitoring status for existing submissions based on WebRTC sessions"""
+    async with db_pool.acquire() as conn:
+        # Update submissions to reflect actual monitoring status
+        await conn.execute("""
+            UPDATE test_submissions 
+            SET is_monitored = true
+            WHERE invite_id IN (
+                SELECT invite_id FROM active_webrtc_sessions 
+                WHERE status IN ('connected', 'offer_sent')
+            )
+        """)
+        
+        # Update submissions to reflect no monitoring for sessions that ended
+        await conn.execute("""
+            UPDATE test_submissions 
+            SET is_monitored = false
+            WHERE invite_id IN (
+                SELECT invite_id FROM active_webrtc_sessions 
+                WHERE status = 'ended'
+            )
+        """)
+        
+        return {"message": "Monitoring status updated for all submissions"}
 
 @api_router.post("/webrtc/end-session/{invite_id}")
 async def end_webrtc_session(invite_id: str):

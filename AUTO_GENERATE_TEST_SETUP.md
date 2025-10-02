@@ -25,6 +25,7 @@ The Auto Generate Test feature uses Google's Gemini AI to automatically create c
 3. **Fill in the form**:
    - **Topic**: Enter your subject (e.g., "React Hooks", "SQL Basics", "Digital Marketing")
    - **Number of Questions**: Choose 1-30 questions
+   - **Difficulty Level**: Select from Beginner, Intermediate, Advanced, or Mixed
    - **Gemini API Key**: Paste your API key
 4. **Click "Generate Test"**
 5. **Wait 30-60 seconds** for AI generation
@@ -39,16 +40,23 @@ The Auto Generate Test feature uses Google's Gemini AI to automatically create c
 
 ### **Test Structure**:
 - **Professional title** (e.g., "React Hooks Mastery Assessment")
-- **Descriptive summary** (2-3 sentences explaining the test)
+- **One-line description** (concise, maximum 100 characters)
 - **Appropriate duration** (estimated 2-3 minutes per question)
 - **Multiple choice questions** with 4 options each
+- **Difficulty-appropriate content** based on selected level
 
 ### **Question Quality**:
-- **Range from beginner to advanced** difficulty
+- **Difficulty-appropriate content** based on selected level
 - **Real-world practical scenarios**
 - **Accurate technical content**
 - **Points assigned** based on difficulty (1-5 points)
 - **Proper answer validation**
+
+### **Difficulty Levels**:
+- **Beginner**: Basic concepts, definitions, and fundamental knowledge
+- **Intermediate**: Practical applications and moderate complexity scenarios
+- **Advanced**: Complex scenarios and expert-level knowledge
+- **Mixed**: Balanced combination of all difficulty levels (30% beginner, 50% intermediate, 20% advanced)
 
 ## 💡 **Topic Examples**
 

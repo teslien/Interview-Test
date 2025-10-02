@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../App';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Video, Users, Clock, AlertCircle, LogOut } from 'lucide-react';
+import { Video, Users, Clock, AlertCircle, LogOut, ArrowLeft } from 'lucide-react';
 
 // WebRTC Configuration
 const RTC_CONFIGURATION = {
@@ -22,6 +23,7 @@ const API = `${BACKEND_URL}/api`;
 
 const TestMonitoring = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTests, setActiveTests] = useState([]);
   const [selectedTest, setSelectedTest] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +41,43 @@ const TestMonitoring = () => {
     const interval = setInterval(fetchActiveTests, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Handle pre-selected applicant from notification
+  useEffect(() => {
+    const preselectedData = localStorage.getItem('preselectedApplicant');
+    if (preselectedData) {
+      try {
+        const { invite_id, applicant_email, timestamp } = JSON.parse(preselectedData);
+        
+        // Check if the data is recent (within 5 minutes)
+        if (Date.now() - timestamp < 5 * 60 * 1000) {
+          // Find the matching test in activeTests
+          const matchingTest = activeTests.find(test => 
+            test.id === invite_id || test.applicant_email === applicant_email
+          );
+          
+          if (matchingTest && matchingTest.can_monitor) {
+            // Auto-select the applicant
+            setSelectedTest(matchingTest);
+            setConnectionStatus('connecting');
+            toast.info(`Auto-selected ${matchingTest.applicant_name} for monitoring`);
+            
+            // Clear the preselected data
+            localStorage.removeItem('preselectedApplicant');
+          } else if (matchingTest && !matchingTest.can_monitor) {
+            toast.warning(`${applicant_email} is not currently taking a test`);
+            localStorage.removeItem('preselectedApplicant');
+          }
+        } else {
+          // Data is too old, remove it
+          localStorage.removeItem('preselectedApplicant');
+        }
+      } catch (error) {
+        console.error('Error parsing preselected applicant data:', error);
+        localStorage.removeItem('preselectedApplicant');
+      }
+    }
+  }, [activeTests]);
 
   const fetchActiveTests = async () => {
     try {
@@ -68,6 +107,12 @@ const TestMonitoring = () => {
       console.error('Failed to fetch active tests:', error);
       toast.error('Failed to fetch active tests: ' + (error.response?.data?.detail || error.message));
     }
+  };
+
+  const handleGoBack = () => {
+    // Clear any preselected data when going back
+    localStorage.removeItem('preselectedApplicant');
+    navigate('/admin');
   };
 
   const handleMonitorTest = async (invite) => {
@@ -263,6 +308,15 @@ const TestMonitoring = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
+              <Button
+                onClick={handleGoBack}
+                variant="outline"
+                size="sm"
+                className="flex items-center space-x-2 hover:bg-gray-50"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back to Dashboard</span>
+              </Button>
               <div className="h-10 w-10 bg-gradient-to-r from-red-600 to-orange-600 rounded-lg flex items-center justify-center">
                 <Video className="h-6 w-6 text-white" />
               </div>
@@ -364,13 +418,24 @@ const TestMonitoring = () => {
                     </span>
                   </div>
                   {selectedTest && (
-                    <Button
-                      onClick={handleStopMonitoring}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Stop Monitoring
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        onClick={() => setSelectedTest(null)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center space-x-1"
+                      >
+                        <ArrowLeft className="h-3 w-3" />
+                        <span>Back to List</span>
+                      </Button>
+                      <Button
+                        onClick={handleStopMonitoring}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Stop Monitoring
+                      </Button>
+                    </div>
                   )}
                 </CardTitle>
               </CardHeader>
