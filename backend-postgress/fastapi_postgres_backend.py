@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -38,7 +38,8 @@ db_pool = None
 security = HTTPBearer()
 SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 240  # 4 hours
+FRONTEND_DOMAIN = os.environ.get('FRONTEND_DOMAIN', 'http://localhost:3000')
 
 # Models
 class User(BaseModel):
@@ -97,6 +98,8 @@ class TestInvite(BaseModel):
     invited_by: str  # admin user id
     invite_token: str = Field(default_factory=lambda: str(uuid.uuid4()))
     scheduled_date: Optional[datetime] = None
+    admin_scheduled: bool = False
+    no_schedule: bool = False
     status: str = "sent"  # "sent", "scheduled", "in_progress", "completed", "expired"
     email_sent: bool = False
     email_sent_at: Optional[datetime] = None
@@ -107,6 +110,9 @@ class TestInviteCreate(BaseModel):
     test_id: str
     applicant_email: EmailStr
     applicant_name: str
+    scheduled_date: Optional[datetime] = None
+    admin_scheduled: bool = False
+    no_schedule: bool = False
 
 class ScheduleTest(BaseModel):
     scheduled_date: datetime
@@ -116,6 +122,10 @@ class AutoGenerateTest(BaseModel):
     questionCount: int = 10
     geminiApiKey: str
     level: str = "intermediate"
+    questionType: str = "multiple_choice"  # "multiple_choice", "coding", "mixed"
+
+class AutoReviewRequest(BaseModel):
+    geminiApiKey: str
 
 class TestAnswer(BaseModel):
     question_id: str
@@ -232,6 +242,162 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
             detail="Not enough permissions"
         )
     return current_user
+
+def get_domain_from_request(request: Request) -> str:
+    """Get the frontend domain from environment variable"""
+    # Always use the environment variable for frontend domain
+    return FRONTEND_DOMAIN
+
+def create_invite_email_template(applicant_name: str, test_title: str, invite_url: str, company_name: str = "Interview Team", scheduled_date: Optional[datetime] = None, admin_scheduled: bool = False, no_schedule: bool = False) -> str:
+    """Create a professional HTML email template for test invitations"""
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Test Invitation</title>
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f4f4f4;
+            }}
+            .container {{
+                background-color: #ffffff;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            .logo {{
+                font-size: 24px;
+                font-weight: bold;
+                color: #2563eb;
+                margin-bottom: 10px;
+            }}
+            .title {{
+                font-size: 28px;
+                color: #1f2937;
+                margin-bottom: 20px;
+            }}
+            .content {{
+                margin-bottom: 30px;
+            }}
+            .test-info {{
+                background-color: #f8fafc;
+                padding: 20px;
+                border-radius: 8px;
+                border-left: 4px solid #2563eb;
+                margin: 20px 0;
+            }}
+            .test-title {{
+                font-size: 20px;
+                font-weight: bold;
+                color: #1f2937;
+                margin-bottom: 10px;
+            }}
+            .cta-button {{
+                display: inline-block;
+                background-color: #2563eb;
+                color: white;
+                padding: 15px 30px;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                margin: 20px 0;
+                transition: background-color 0.3s;
+            }}
+            .cta-button:hover {{
+                background-color: #1d4ed8;
+            }}
+            .instructions {{
+                background-color: #fef3c7;
+                padding: 15px;
+                border-radius: 8px;
+                border-left: 4px solid #f59e0b;
+                margin: 20px 0;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #e0e0e0;
+                color: #6b7280;
+                font-size: 14px;
+            }}
+            .security-note {{
+                background-color: #f3f4f6;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 20px 0;
+                font-size: 14px;
+                color: #6b7280;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">🎯 Interview Platform</div>
+                <h1 class="title">Test Invitation</h1>
+            </div>
+            
+            <div class="content">
+                <p>Hi <strong>{applicant_name}</strong>,</p>
+                
+                <p>You have been invited to take a pre-interview assessment. This is an important step in our evaluation process.</p>
+                
+                <div class="test-info">
+                    <div class="test-title">📝 {test_title}</div>
+                    <p>Please complete this assessment at your earliest convenience to proceed with your application.</p>
+                </div>
+                
+                <div class="instructions">
+                    <h3>📋 Instructions:</h3>
+                    <ul>
+                        <li>Click the button below to access the platform</li>
+                        <li>Sign up or log in to your account</li>
+                        {"<li>Your test has been scheduled for: <strong>" + scheduled_date.strftime('%B %d, %Y at %I:%M %p') + "</strong></li>" if admin_scheduled and scheduled_date else "<li>You can take the test anytime at your convenience</li>" if no_schedule else "<li>Choose a convenient date and time for your assessment</li>"}
+                        <li>Ensure you have a stable internet connection</li>
+                        <li>Find a quiet environment for the test</li>
+                        <li>Have a valid ID ready for verification</li>
+                    </ul>
+                </div>
+                
+                <div style="text-align: center;">
+                    <a href="{invite_url}" class="cta-button">🚀 {"Access Platform" if admin_scheduled and scheduled_date else "Take Test Anytime" if no_schedule else "Sign Up & Take Test"}</a>
+                </div>
+                
+                <div class="security-note">
+                    <strong>🔒 Security Note:</strong> This link is unique to you and should not be shared with others. The assessment will be monitored for integrity purposes.
+                </div>
+                
+                <p>If you have any questions or technical issues, please contact our support team immediately.</p>
+                
+                <p>Good luck with your assessment!</p>
+            </div>
+            
+            <div class="footer">
+                <p>Best regards,<br><strong>{company_name}</strong></p>
+                <p style="font-size: 12px; color: #9ca3af;">
+                    This is an automated message. Please do not reply to this email.
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 async def send_email(to_email: str, subject: str, body: str, admin_id: str = None):
     try:
@@ -571,21 +737,61 @@ async def auto_generate_test(data: AutoGenerateTest, admin: User = Depends(get_a
                 detail="Could not initialize any Gemini model. Please check your API key and try again."
             )
         
-        # Define the JSON structure we want
-        json_structure = {
-            "title": "string",
-            "description": "string", 
-            "duration_minutes": "number",
-            "questions": [
-                {
-                    "type": "multiple_choice",
-                    "question": "string",
-                    "options": ["string", "string", "string", "string"],
-                    "correct_answer": "string",
-                    "points": "number"
-                }
-            ]
-        }
+        # Define the JSON structure based on question type
+        if data.questionType == "multiple_choice":
+            json_structure = {
+                "title": "string",
+                "description": "string", 
+                "duration_minutes": "number",
+                "questions": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "string",
+                        "options": ["string", "string", "string", "string"],
+                        "correct_answer": "string",
+                        "points": "number"
+                    }
+                ]
+            }
+        elif data.questionType == "coding":
+            json_structure = {
+                "title": "string",
+                "description": "string", 
+                "duration_minutes": "number",
+                "questions": [
+                    {
+                        "type": "coding",
+                        "question": "string",
+                        "options": None,
+                        "correct_answer": "string (expected solution or key points)",
+                        "expected_language": "string (e.g., Python, JavaScript, Java)",
+                        "points": "number"
+                    }
+                ]
+            }
+        else:  # mixed
+            json_structure = {
+                "title": "string",
+                "description": "string", 
+                "duration_minutes": "number",
+                "questions": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "string",
+                        "options": ["string", "string", "string", "string"],
+                        "correct_answer": "string",
+                        "points": "number"
+                    },
+                    {
+                        "type": "coding",
+                        "question": "string",
+                        "options": None,
+                        "correct_answer": "string (expected solution or key points)",
+                        "expected_language": "string (e.g., Python, JavaScript, Java)",
+                        "points": "number"
+                    }
+                ]
+            }
         
         # Map level to detailed instructions
         level_instructions = {
@@ -597,8 +803,9 @@ async def auto_generate_test(data: AutoGenerateTest, admin: User = Depends(get_a
         
         level_instruction = level_instructions.get(data.level, level_instructions["intermediate"])
         
-        # Create the prompt
-        prompt = f"""
+        # Create the prompt based on question type
+        if data.questionType == "multiple_choice":
+            prompt = f"""
 Create a comprehensive {data.topic} assessment test with exactly {data.questionCount} multiple choice questions.
 
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
@@ -619,6 +826,63 @@ Requirements:
 
 Topic: {data.topic}
 Number of questions: {data.questionCount}
+Difficulty level: {data.level}
+
+Return ONLY the JSON object, no additional text or formatting.
+"""
+        elif data.questionType == "coding":
+            prompt = f"""
+Create a comprehensive {data.topic} coding assessment test with exactly {data.questionCount} coding questions.
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{json.dumps(json_structure, indent=2)}
+
+Requirements:
+- Title: Create a professional title for the {data.topic} coding test
+- Description: Write a ONE-LINE description (maximum 100 characters) that clearly explains what the test covers
+- Duration: Set appropriate duration in minutes (estimate 5-10 minutes per coding question)
+- Questions: Create exactly {data.questionCount} coding questions
+- Each question should specify the expected programming language (Python, JavaScript, Java, C++, etc.)
+- Difficulty Level: {level_instruction}
+- Each question worth 5-15 points based on complexity
+- Cover different aspects of {data.topic} programming
+- Provide clear problem statements with examples
+- Include expected solution or key points in correct_answer
+- Make problems practical and relevant to real-world scenarios
+- Vary the programming languages across questions
+
+Topic: {data.topic}
+Number of questions: {data.questionCount}
+Difficulty level: {data.level}
+
+Return ONLY the JSON object, no additional text or formatting.
+"""
+        else:  # mixed
+            # Calculate distribution for mixed questions
+            mcq_count = data.questionCount // 2
+            coding_count = data.questionCount - mcq_count
+            
+            prompt = f"""
+Create a comprehensive {data.topic} assessment test with exactly {data.questionCount} questions: {mcq_count} multiple choice questions and {coding_count} coding questions.
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{json.dumps(json_structure, indent=2)}
+
+Requirements:
+- Title: Create a professional title for the {data.topic} test
+- Description: Write a ONE-LINE description (maximum 100 characters) that clearly explains what the test covers
+- Duration: Set appropriate duration in minutes (estimate 2-3 minutes per MCQ, 5-10 minutes per coding question)
+- Questions: Create exactly {mcq_count} multiple choice questions and {coding_count} coding questions
+- Multiple Choice: Each must have exactly 4 options (A, B, C, D)
+- Coding: Each should specify expected programming language and provide clear problem statements
+- Difficulty Level: {level_instruction}
+- Points: MCQ worth 1-5 points, coding questions worth 5-15 points
+- Cover different aspects of {data.topic}
+- Make questions practical and relevant to real-world scenarios
+- Use clear, concise language
+
+Topic: {data.topic}
+Number of questions: {data.questionCount} ({mcq_count} MCQ + {coding_count} Coding)
 Difficulty level: {data.level}
 
 Return ONLY the JSON object, no additional text or formatting.
@@ -681,26 +945,48 @@ Return ONLY the JSON object, no additional text or formatting.
                 for i, question_data in enumerate(test_data['questions']):
                     question_id = uuid.uuid4()
                     
-                    # Validate question structure
-                    if not all(key in question_data for key in ['type', 'question', 'options', 'correct_answer', 'points']):
+                    # Validate question structure based on type
+                    if question_data['type'] == 'multiple_choice':
+                        if not all(key in question_data for key in ['type', 'question', 'options', 'correct_answer', 'points']):
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Question {i+1} missing required fields for multiple choice"
+                            )
+                        
+                        if question_data['correct_answer'] not in question_data['options']:
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Question {i+1}: correct_answer must be one of the options"
+                            )
+                        
+                        await conn.execute("""
+                            INSERT INTO questions (id, test_id, type, question, options, correct_answer, 
+                                                 expected_language, points, question_order)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        """, question_id, test_id, question_data['type'], question_data['question'],
+                            json.dumps(question_data['options']), question_data['correct_answer'],
+                            None, question_data['points'], i + 1)
+                    
+                    elif question_data['type'] == 'coding':
+                        if not all(key in question_data for key in ['type', 'question', 'correct_answer', 'expected_language', 'points']):
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Question {i+1} missing required fields for coding question"
+                            )
+                        
+                        await conn.execute("""
+                            INSERT INTO questions (id, test_id, type, question, options, correct_answer, 
+                                                 expected_language, points, question_order)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        """, question_id, test_id, question_data['type'], question_data['question'],
+                            None, question_data['correct_answer'],
+                            question_data['expected_language'], question_data['points'], i + 1)
+                    
+                    else:
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Question {i+1} missing required fields"
+                            detail=f"Question {i+1}: unsupported question type '{question_data['type']}'"
                         )
-                    
-                    if question_data['correct_answer'] not in question_data['options']:
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Question {i+1}: correct_answer must be one of the options"
-                        )
-                    
-                    await conn.execute("""
-                        INSERT INTO questions (id, test_id, type, question, options, correct_answer, 
-                                             expected_language, points, question_order)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    """, question_id, test_id, question_data['type'], question_data['question'],
-                        json.dumps(question_data['options']), question_data['correct_answer'],
-                        None, question_data['points'], i + 1)
         
         return {
             "success": True,
@@ -923,7 +1209,7 @@ async def update_test(test_id: str, test_update: TestCreate, admin: User = Depen
 
 # Test Invitation Routes
 @api_router.post("/invites", response_model=TestInvite)
-async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depends(get_admin_user)):
+async def send_test_invite(invite_create: TestInviteCreate, request: Request, admin: User = Depends(get_admin_user)):
     async with db_pool.acquire() as conn:
         # Check if test exists
         test = await conn.fetchrow(
@@ -939,27 +1225,28 @@ async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depend
         # Insert invite
         invite_row = await conn.fetchrow("""
             INSERT INTO test_invites (id, test_id, applicant_email, applicant_name,
-                                    invited_by, invite_token)
-            VALUES ($1, $2, $3, $4, $5, $6)
+                                    invited_by, invite_token, scheduled_date, admin_scheduled, no_schedule, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id, test_id, applicant_email, applicant_name, invited_by,
-                      invite_token, scheduled_date, status, created_at
+                      invite_token, scheduled_date, admin_scheduled, no_schedule, status, created_at
         """, uuid.UUID(invite_id), uuid.UUID(invite_create.test_id),
             invite_create.applicant_email, invite_create.applicant_name,
-            uuid.UUID(admin.id), uuid.UUID(invite_token))
+            uuid.UUID(admin.id), uuid.UUID(invite_token), 
+            invite_create.scheduled_date, invite_create.admin_scheduled, invite_create.no_schedule,
+            "scheduled" if invite_create.admin_scheduled and invite_create.scheduled_date else "sent")
         
         # Send email
-        invite_url = f"https://your-domain.com/test-invite/{invite_token}"
-        email_body = f"""
-        Hi {invite_create.applicant_name},
-        
-        You have been invited to take a pre-interview test: {test['title']}
-        
-        Please click the link below to schedule your test:
-        {invite_url}
-        
-        Best regards,
-        Interview Team
-        """
+        domain = get_domain_from_request(request)
+        invite_url = domain  # Just send the domain, user will go to login page
+        email_body = create_invite_email_template(
+            applicant_name=invite_create.applicant_name,
+            test_title=test['title'],
+            invite_url=invite_url,
+            company_name="Interview Team",
+            scheduled_date=invite_create.scheduled_date,
+            admin_scheduled=invite_create.admin_scheduled,
+            no_schedule=invite_create.no_schedule
+        )
         
         # Try to send email, but don't fail the invite creation if email fails
         email_sent = await send_email(invite_create.applicant_email, f"Test Invitation: {test['title']}", email_body, admin.id)
@@ -1063,7 +1350,7 @@ async def get_invites(
         ) for row in rows]
 
 @api_router.post("/invites/{invite_id}/retry-email")
-async def retry_invite_email(invite_id: str, admin: User = Depends(get_admin_user)):
+async def retry_invite_email(invite_id: str, request: Request, admin: User = Depends(get_admin_user)):
     async with db_pool.acquire() as conn:
         # Get invite details
         invite_row = await conn.fetchrow("""
@@ -1077,18 +1364,14 @@ async def retry_invite_email(invite_id: str, admin: User = Depends(get_admin_use
             raise HTTPException(status_code=404, detail="Invite not found")
         
         # Send email
-        invite_url = f"https://your-domain.com/test-invite/{invite_row['invite_token']}"
-        email_body = f"""
-        Hi {invite_row['applicant_name']},
-        
-        You have been invited to take a pre-interview test: {invite_row['test_title']}
-        
-        Please click the link below to schedule your test:
-        {invite_url}
-        
-        Best regards,
-        Interview Team
-        """
+        domain = get_domain_from_request(request)
+        invite_url = f"{domain}/test-invite/{invite_row['invite_token']}"
+        email_body = create_invite_email_template(
+            applicant_name=invite_row['applicant_name'],
+            test_title=invite_row['test_title'],
+            invite_url=invite_url,
+            company_name="Interview Team"
+        )
         
         # Try to send email
         email_sent = await send_email(invite_row['applicant_email'], f"Test Invitation: {invite_row['test_title']}", email_body, admin.id)
@@ -2140,7 +2423,8 @@ async def get_my_invites(current_user: User = Depends(get_current_user)):
     async with db_pool.acquire() as conn:
         invite_rows = await conn.fetch("""
             SELECT ti.id, ti.test_id, ti.applicant_email, ti.applicant_name, ti.status,
-                   ti.invite_token, ti.scheduled_date, ti.created_at, ti.started_at,
+                   ti.invite_token, ti.scheduled_date, ti.admin_scheduled, ti.no_schedule,
+                   ti.created_at, ti.started_at,
                    t.title as test_title, t.description, t.duration_minutes
             FROM test_invites ti
             JOIN tests t ON ti.test_id = t.id
@@ -2158,6 +2442,8 @@ async def get_my_invites(current_user: User = Depends(get_current_user)):
                 "status": row['status'],
                 "invite_token": str(row['invite_token']),
                 "scheduled_date": row['scheduled_date'],
+                "admin_scheduled": row['admin_scheduled'],
+                "no_schedule": row['no_schedule'],
                 "created_at": row['created_at'],
                 "started_at": row['started_at'],
                 "test_title": row['test_title'],
@@ -2593,6 +2879,273 @@ async def recalculate_final_score(conn, submission_id: str, reviewer_id: str):
             review_completed_at = CURRENT_TIMESTAMP
         WHERE id = $4
     """, total_manual_score, final_score, uuid.UUID(reviewer_id), uuid.UUID(submission_id))
+
+@api_router.post("/admin/auto-review/{submission_id}")
+async def auto_review_submission(
+    submission_id: str,
+    request: AutoReviewRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Auto-review a submission using Gemini AI"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Check if Gemini AI is available
+    if not GEMINI_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Auto-review feature is not available. Please install google-generativeai package: pip install google-generativeai==0.3.1"
+        )
+    
+    try:
+        # Configure Gemini AI
+        genai.configure(api_key=request.geminiApiKey)
+        
+        # Try different model names in order of preference
+        model_names = [
+            'models/gemini-2.5-flash',
+            'models/gemini-2.0-flash', 
+            'models/gemini-flash-latest',
+            'models/gemini-pro-latest',
+            'models/gemini-2.5-pro',
+            'models/gemini-2.0-flash-001',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-flash'
+        ]
+        
+        model = None
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                print(f"Successfully created model for auto-review: {model_name}")
+                break
+            except Exception as e:
+                print(f"Failed to create model {model_name}: {e}")
+                continue
+        
+        if model is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Could not initialize any Gemini model. Please check your API key and try again."
+            )
+        
+        async with db_pool.acquire() as conn:
+            # Get submission details with questions and answers
+            submission_data = await conn.fetchrow("""
+                SELECT ts.id, ts.invite_id, ts.test_id, ts.applicant_email, ts.auto_score,
+                       t.title as test_title, t.description as test_description
+                FROM test_submissions ts
+                JOIN tests t ON ts.test_id = t.id
+                WHERE ts.id = $1
+            """, uuid.UUID(submission_id))
+            
+            if not submission_data:
+                raise HTTPException(status_code=404, detail="Submission not found")
+            
+            # Get questions and answers for manual scoring
+            questions_answers = await conn.fetch("""
+                SELECT q.id, q.type, q.question, q.options, q.correct_answer, 
+                       q.expected_language, q.points, ta.answer, ta.manual_score_status
+                FROM questions q
+                LEFT JOIN test_answers ta ON q.id = ta.question_id AND ta.submission_id = $1
+                WHERE q.test_id = $2 AND q.type IN ('essay', 'coding')
+                ORDER BY q.question_order
+            """, uuid.UUID(submission_id), submission_data['test_id'])
+            
+            if not questions_answers:
+                raise HTTPException(status_code=400, detail="No manual questions found for this submission")
+            
+            # Prepare review data
+            review_data = []
+            for qa in questions_answers:
+                if qa['answer'] and qa['manual_score_status'] == 'pending':
+                    review_data.append({
+                        'question_id': str(qa['id']),
+                        'question_type': qa['type'],
+                        'question': qa['question'],
+                        'correct_answer': qa['correct_answer'],
+                        'expected_language': qa['expected_language'],
+                        'points': qa['points'],
+                        'student_answer': qa['answer']
+                    })
+            
+            if not review_data:
+                raise HTTPException(status_code=400, detail="No pending answers to review")
+            
+            # Create prompt for auto-review
+            prompt = f"""
+You are an expert test reviewer. Please review the following test submission and provide scores and feedback for each answer.
+
+Test: {submission_data['test_title']}
+Student: {submission_data['applicant_email']}
+
+Please review each answer and provide:
+1. A score (0 to max_points for each question)
+2. Brief feedback explaining the score
+3. Overall assessment
+
+CRITICAL: You MUST use the exact question_id provided for each question. Do not modify or generate new IDs.
+
+For each question, respond in this exact JSON format:
+{{
+  "reviews": [
+    {{
+      "question_id": "EXACT_QUESTION_ID_FROM_BELOW",
+      "score": number_between_0_and_max_points,
+      "feedback": "Brief explanation of the score and any improvements needed",
+      "status": "correct|partial|wrong"
+    }}
+  ],
+  "overall_feedback": "Overall assessment of the submission"
+}}
+
+Questions to review:
+"""
+            
+            for i, qa in enumerate(review_data, 1):
+                prompt += f"""
+Question {i} ({qa['question_type']} - {qa['points']} points):
+QUESTION_ID: {qa['question_id']}
+{qa['question']}
+
+Expected Answer: {qa['correct_answer']}
+"""
+                if qa['expected_language']:
+                    prompt += f"Expected Language: {qa['expected_language']}\n"
+                
+                prompt += f"""
+Student's Answer:
+{qa['student_answer']}
+
+IMPORTANT: Use QUESTION_ID "{qa['question_id']}" in your response for this question.
+
+---
+"""
+            
+            prompt += """
+IMPORTANT: 
+- For coding questions, evaluate correctness, logic, and implementation quality
+- For essay questions, evaluate content accuracy, completeness, and clarity
+- Be fair but thorough in your assessment
+- Provide constructive feedback
+- Return ONLY the JSON object, no additional text
+"""
+            
+            # Generate review
+            response = model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up the response text
+            if response_text.startswith('```json'):
+                response_text = response_text[7:]
+            if response_text.startswith('```'):
+                response_text = response_text[3:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+            
+            response_text = response_text.strip()
+            
+            # Parse the JSON response
+            try:
+                review_result = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    review_result = json.loads(json_match.group())
+                else:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Failed to parse AI review response as JSON: {str(e)}"
+                    )
+            
+            # Validate the structure
+            if 'reviews' not in review_result:
+                raise HTTPException(
+                    status_code=500,
+                    detail="AI review response missing 'reviews' field"
+                )
+            
+            # Update answers with AI scores
+            total_ai_score = 0
+            for review in review_result['reviews']:
+                question_id = review['question_id']
+                score = float(review['score'])
+                feedback = review['feedback']
+                status = review['status']
+                
+                # Find the question to get max points and validate question_id
+                matching_qa = next((qa for qa in review_data if str(qa['question_id']) == question_id), None)
+                if not matching_qa:
+                    print(f"Warning: Question ID {question_id} not found in review data")
+                    continue
+                
+                question_points = matching_qa['points']
+                
+                # Ensure score doesn't exceed max points
+                score = min(score, question_points)
+                total_ai_score += score
+                
+                # Validate UUIDs before using them
+                try:
+                    question_uuid = uuid.UUID(question_id)
+                    submission_uuid = uuid.UUID(submission_id)
+                    reviewer_uuid = uuid.UUID(current_user.id)
+                except ValueError as e:
+                    print(f"Invalid UUID format: {e}")
+                    continue
+                
+                # Update the answer in database
+                await conn.execute("""
+                    UPDATE test_answers
+                    SET manual_score = $1,
+                        manual_score_status = $2,
+                        review_comments = $3,
+                        reviewer_id = $4,
+                        reviewed_at = CURRENT_TIMESTAMP
+                    WHERE question_id = $5 AND submission_id = $6
+                """, score, status, feedback, reviewer_uuid, 
+                    question_uuid, submission_uuid)
+            
+            # Update submission with final scores
+            try:
+                reviewer_uuid = uuid.UUID(current_user.id)
+                submission_uuid = uuid.UUID(submission_id)
+                
+                await conn.execute("""
+                    UPDATE test_submissions
+                    SET manual_score = $1,
+                        final_score = $2,
+                        scoring_status = 'fully_reviewed',
+                        reviewed_by = $3,
+                        review_completed_at = CURRENT_TIMESTAMP
+                    WHERE id = $4
+                """, total_ai_score, 
+                    (submission_data['auto_score'] or 0) + total_ai_score, 
+                    reviewer_uuid, 
+                    submission_uuid)
+            except ValueError as e:
+                print(f"Invalid UUID format in final update: {e}")
+                raise HTTPException(status_code=500, detail="Invalid UUID format")
+            
+            return {
+                "success": True,
+                "message": "Auto-review completed successfully",
+                "total_score": total_ai_score,
+                "overall_feedback": review_result.get('overall_feedback', ''),
+                "questions_reviewed": len(review_result['reviews'])
+            }
+            
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            import traceback
+            print(f"Auto-review error: {str(e)}")
+            print(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to perform auto-review: {str(e)}"
+            )
 
 @api_router.post("/webrtc/ice-candidate")
 async def handle_ice_candidate(data: Dict[str, Any]):

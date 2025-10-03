@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut, FileText, Users, Timer } from 'lucide-react';
 import BrandIcon from '@/components/ui/BrandIcon';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -18,6 +19,8 @@ const ApplicantDashboard = () => {
   const [upcomingTests, setUpcomingTests] = useState([]);
   const [completedTests, setCompletedTests] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedTest, setSelectedTest] = useState(null);
+  const [showTestDetails, setShowTestDetails] = useState(false);
 
   useEffect(() => {
     fetchApplicantData();
@@ -133,24 +136,41 @@ const ApplicantDashboard = () => {
     }
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (test) => {
     const statusConfig = {
-      sent: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
+      sent: { color: 'bg-blue-100 text-blue-800', label: 'Ready', icon: Calendar },
       scheduled: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
       in_progress: { color: 'bg-orange-100 text-orange-800', label: 'In Progress', icon: Clock },
       completed: { color: 'bg-green-100 text-green-800', label: 'Completed', icon: CheckCircle },
       expired: { color: 'bg-red-100 text-red-800', label: 'Expired', icon: AlertCircle }
     };
     
-    const config = statusConfig[status] || statusConfig.scheduled;
+    // Determine the appropriate label based on scheduling type
+    let label = statusConfig[test.status]?.label || 'Ready';
+    if (test.status === 'sent') {
+      if (test.no_schedule) {
+        label = 'Available';
+      } else if (test.admin_scheduled && test.scheduled_date) {
+        label = 'Scheduled';
+      } else {
+        label = 'Ready';
+      }
+    }
+    
+    const config = statusConfig[test.status] || statusConfig.sent;
     const Icon = config.icon;
     
     return (
       <Badge className={`${config.color} border-0 flex items-center space-x-1`}>
         <Icon className="h-3 w-3" />
-        <span>{config.label}</span>
+        <span>{label}</span>
       </Badge>
     );
+  };
+
+  const handleViewTestDetails = (test) => {
+    setSelectedTest(test);
+    setShowTestDetails(true);
   };
 
   return (
@@ -182,7 +202,7 @@ const ApplicantDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -206,24 +226,6 @@ const ApplicantDashboard = () => {
                 </div>
                 <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <CheckCircle className="h-6 w-6 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Average Score</p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {completedTests.length > 0 
-                      ? Math.round(completedTests.reduce((acc, test) => acc + (test.score || 0), 0) / completedTests.length)
-                      : 0}%
-                  </p>
-                </div>
-                <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <User className="h-6 w-6 text-purple-600" />
                 </div>
               </div>
             </CardContent>
@@ -256,7 +258,7 @@ const ApplicantDashboard = () => {
                               <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Next</span>
                             )}
                           </div>
-                          {getStatusBadge(test.status)}
+                          {getStatusBadge(test)}
                         </div>
                       </CardHeader>
                       <CardContent>
@@ -266,7 +268,9 @@ const ApplicantDashboard = () => {
                             <span>
                               {test.scheduled_date 
                                 ? new Date(test.scheduled_date).toLocaleDateString()
-                                : 'Not scheduled'
+                                : test.no_schedule 
+                                  ? 'Available anytime'
+                                  : 'Schedule required'
                               }
                             </span>
                           </div>
@@ -317,7 +321,7 @@ const ApplicantDashboard = () => {
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
-                        {getStatusBadge(test.status)}
+                        {getStatusBadge(test)}
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -330,18 +334,6 @@ const ApplicantDashboard = () => {
                               : 'N/A'
                             }
                           </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Score:</span>
-                          <div className="flex items-center space-x-2">
-                            <div className="h-2 w-20 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-green-500 to-blue-500 rounded-full"
-                                style={{ width: `${test.score || 0}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium">{test.score || 0}%</span>
-                          </div>
                         </div>
                         {test.scoring_status && test.scoring_status !== 'auto_only' && (
                           <div className="flex items-center space-x-2 text-xs">
@@ -364,8 +356,9 @@ const ApplicantDashboard = () => {
                           variant="outline" 
                           className="w-full mt-4"
                           data-testid={`view-results-${test.id}`}
+                          onClick={() => handleViewTestDetails(test)}
                         >
-                          View Results
+                          View Test Details
                         </Button>
                       </div>
                     </CardContent>
@@ -376,6 +369,128 @@ const ApplicantDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Test Details Dialog */}
+      <Dialog open={showTestDetails} onOpenChange={setShowTestDetails}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold flex items-center space-x-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              <span>Test Details</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedTest && (
+            <div className="space-y-6">
+              {/* Test Overview */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  {selectedTest.test_title || selectedTest.test?.title}
+                </h3>
+                {selectedTest.test_description && (
+                  <p className="text-gray-600 mb-4">{selectedTest.test_description}</p>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Calendar className="h-4 w-4" />
+                    <span>
+                      Completed: {selectedTest.submitted_at 
+                        ? new Date(selectedTest.submitted_at).toLocaleDateString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Timer className="h-4 w-4" />
+                    <span>Duration: {selectedTest.test_duration_minutes || 90} minutes</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Users className="h-4 w-4" />
+                    <span>Applicant: {selectedTest.applicant_name}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Status: Completed</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Test Information */}
+              <div className="space-y-4">
+                <h4 className="text-md font-semibold text-gray-900 flex items-center space-x-2">
+                  <FileText className="h-4 w-4" />
+                  <span>Test Information</span>
+                </h4>
+                
+                <div className="bg-white border rounded-lg p-4 space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Test ID:</span>
+                    <span className="text-sm text-gray-900 font-mono">{selectedTest.test_id}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Submission ID:</span>
+                    <span className="text-sm text-gray-900 font-mono">{selectedTest.id}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Started At:</span>
+                    <span className="text-sm text-gray-900">
+                      {selectedTest.started_at 
+                        ? new Date(selectedTest.started_at).toLocaleString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Submitted At:</span>
+                    <span className="text-sm text-gray-900">
+                      {selectedTest.submitted_at 
+                        ? new Date(selectedTest.submitted_at).toLocaleString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium text-gray-600">Review Status:</span>
+                    <Badge 
+                      variant={
+                        selectedTest.scoring_status === 'needs_review' ? 'destructive' :
+                        selectedTest.scoring_status === 'partially_reviewed' ? 'default' :
+                        selectedTest.scoring_status === 'fully_reviewed' ? 'outline' :
+                        'secondary'
+                      }
+                      className="text-xs"
+                    >
+                      {selectedTest.scoring_status === 'needs_review' ? 'Under Review' :
+                       selectedTest.scoring_status === 'partially_reviewed' ? 'Partial Review' :
+                       selectedTest.scoring_status === 'fully_reviewed' ? 'Fully Reviewed' :
+                       selectedTest.scoring_status || 'Auto-scored'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {/* Note about scores */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h5 className="text-sm font-medium text-blue-900">Score Information</h5>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Test scores and detailed answers are not visible to applicants. 
+                      Your test has been submitted and is being reviewed by the assessment team.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

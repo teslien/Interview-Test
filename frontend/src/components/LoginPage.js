@@ -240,24 +240,12 @@ const LoginPage = () => {
                     </div>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label htmlFor="register-role" className="text-sm font-medium text-gray-700">
-                      Role
-                    </Label>
-                    <div className="relative">
-                      <Shield className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <select
-                        id="register-role"
-                        className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
-                        value={registerData.role}
-                        onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
-                        data-testid="register-role-select"
-                      >
-                        <option value="applicant">Applicant</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </div>
-                  </div>
+                  {/* Role selection hidden - only applicants can register */}
+                  <input
+                    type="hidden"
+                    value="applicant"
+                    onChange={() => {}}
+                  />
                   
                   <Button
                     type="submit"

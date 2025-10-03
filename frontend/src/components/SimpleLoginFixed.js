@@ -343,36 +343,12 @@ const SimpleLoginFixed = () => {
               />
             </div>
             
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Role</label>
-              <select
-                style={styles.select}
-                value={registerData.role}
-                onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
-                data-testid="register-role-select"
-                disabled={checkingAdminStatus}
-              >
-                <option value="applicant">Applicant</option>
-                {checkingAdminStatus ? (
-                  <option value="applicant">Loading...</option>
-                ) : (
-                  !adminExists && <option value="admin">Admin</option>
-                )}
-              </select>
-              {adminExists && (
-                <div style={{
-                  marginTop: '8px',
-                  padding: '8px 12px',
-                  backgroundColor: '#fef3c7',
-                  border: '1px solid #f59e0b',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  color: '#92400e'
-                }}>
-                  <strong>Note:</strong> Admin registration is not available. Only applicants can register when admins already exist.
-                </div>
-              )}
-            </div>
+            {/* Role selection hidden - only applicants can register */}
+            <input
+              type="hidden"
+              value="applicant"
+              onChange={() => {}}
+            />
             
             <button
               type="submit"

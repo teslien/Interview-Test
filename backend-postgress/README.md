@@ -39,7 +39,7 @@ SECRET_KEY=your-secret-key-here-change-in-production
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 
 # Application Configuration
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+ACCESS_TOKEN_EXPIRE_MINUTES=240  # 4 hours
 ```
 
 ### 3. Dependencies Installation
