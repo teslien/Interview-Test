@@ -37,6 +37,11 @@ const TestMonitoring = () => {
   
   // Add ref to track polling timeout
   const pollingTimeoutRef = useRef(null);
+  
+  // Add refs to track current values for cleanup
+  const peerConnectionRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const selectedTestRef = useRef(null);
 
   useEffect(() => {
     fetchActiveTests();
@@ -54,21 +59,34 @@ const TestMonitoring = () => {
       }
       
       // Close peer connection
-      if (peerConnection) {
-        peerConnection.close();
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
       }
       
       // Stop remote stream
-      if (remoteStream) {
-        remoteStream.getTracks().forEach(track => track.stop());
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.getTracks().forEach(track => track.stop());
       }
       
       // End WebRTC session if there's a selected test
-      if (selectedTest) {
-        axios.post(`${API}/webrtc/end-session/${selectedTest.id}`).catch(console.error);
+      if (selectedTestRef.current) {
+        axios.post(`${API}/webrtc/end-session/${selectedTestRef.current.id}`).catch(console.error);
       }
     };
-  }, [peerConnection, remoteStream, selectedTest]);
+  }, []); // Empty dependency array - only run on unmount
+
+  // Keep refs in sync with state values
+  useEffect(() => {
+    peerConnectionRef.current = peerConnection;
+  }, [peerConnection]);
+
+  useEffect(() => {
+    remoteStreamRef.current = remoteStream;
+  }, [remoteStream]);
+
+  useEffect(() => {
+    selectedTestRef.current = selectedTest;
+  }, [selectedTest]);
 
   // Handle pre-selected applicant from notification
   useEffect(() => {
