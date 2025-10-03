@@ -34,6 +34,9 @@ const TestMonitoring = () => {
   const [remoteStream, setRemoteStream] = useState(null);
   const [webrtcConnected, setWebrtcConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  
+  // Add ref to track polling timeout
+  const pollingTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetchActiveTests();
@@ -41,6 +44,31 @@ const TestMonitoring = () => {
     const interval = setInterval(fetchActiveTests, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Cleanup WebRTC connections when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any pending polling timeout
+      if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+      }
+      
+      // Close peer connection
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      
+      // Stop remote stream
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+      }
+      
+      // End WebRTC session if there's a selected test
+      if (selectedTest) {
+        axios.post(`${API}/webrtc/end-session/${selectedTest.id}`).catch(console.error);
+      }
+    };
+  }, [peerConnection, remoteStream, selectedTest]);
 
   // Handle pre-selected applicant from notification
   useEffect(() => {
@@ -263,7 +291,7 @@ const TestMonitoring = () => {
       // Continue polling if not connected
       if (!webrtcConnected) {
         console.log('TestMonitoring - Continuing to poll for WebRTC offer...');
-        setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
+        pollingTimeoutRef.current = setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
       } else {
         console.log('TestMonitoring - WebRTC connected, stopping polling');
       }
@@ -271,12 +299,18 @@ const TestMonitoring = () => {
       console.error('Failed to poll for WebRTC offer:', error);
       // Continue polling on error
       if (!webrtcConnected) {
-        setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
+        pollingTimeoutRef.current = setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
       }
     }
   };
 
   const handleStopMonitoring = async () => {
+    // Clear any pending polling timeout
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+
     // End WebRTC session in backend
     if (selectedTest) {
       try {
@@ -289,6 +323,11 @@ const TestMonitoring = () => {
     // Close peer connection
     if (peerConnection) {
       peerConnection.close();
+    }
+
+    // Stop remote stream
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop());
     }
 
     // Clean up state

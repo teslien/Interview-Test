@@ -98,6 +98,9 @@ class TestInvite(BaseModel):
     invite_token: str = Field(default_factory=lambda: str(uuid.uuid4()))
     scheduled_date: Optional[datetime] = None
     status: str = "sent"  # "sent", "scheduled", "in_progress", "completed", "expired"
+    email_sent: bool = False
+    email_sent_at: Optional[datetime] = None
+    email_error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class TestInviteCreate(BaseModel):
@@ -958,21 +961,36 @@ async def send_test_invite(invite_create: TestInviteCreate, admin: User = Depend
         Interview Team
         """
         
-        if not await send_email(invite_create.applicant_email, f"Test Invitation: {test['title']}", email_body, admin.id):
-            # Rollback by deleting the invite
-            await conn.execute("DELETE FROM test_invites WHERE id = $1", uuid.UUID(invite_id))
-            raise HTTPException(status_code=500, detail="Failed to send email")
+        # Try to send email, but don't fail the invite creation if email fails
+        email_sent = await send_email(invite_create.applicant_email, f"Test Invitation: {test['title']}", email_body, admin.id)
+        
+        # Update invite with email status
+        await conn.execute("""
+            UPDATE test_invites 
+            SET email_sent = $1, email_sent_at = $2
+            WHERE id = $3
+        """, email_sent, datetime.now(timezone.utc) if email_sent else None, uuid.UUID(invite_id))
+        
+        # Fetch the updated invite with email status
+        updated_invite = await conn.fetchrow("""
+            SELECT id, test_id, applicant_email, applicant_name, invited_by,
+                   invite_token, scheduled_date, status, email_sent, email_sent_at, email_error, created_at
+            FROM test_invites WHERE id = $1
+        """, uuid.UUID(invite_id))
         
         return TestInvite(
-            id=str(invite_row['id']),
-            test_id=str(invite_row['test_id']),
-            applicant_email=invite_row['applicant_email'],
-            applicant_name=invite_row['applicant_name'],
-            invited_by=str(invite_row['invited_by']),
-            invite_token=str(invite_row['invite_token']),
-            scheduled_date=invite_row['scheduled_date'],
-            status=invite_row['status'],
-            created_at=invite_row['created_at']
+            id=str(updated_invite['id']),
+            test_id=str(updated_invite['test_id']),
+            applicant_email=updated_invite['applicant_email'],
+            applicant_name=updated_invite['applicant_name'],
+            invited_by=str(updated_invite['invited_by']),
+            invite_token=str(updated_invite['invite_token']),
+            scheduled_date=updated_invite['scheduled_date'],
+            status=updated_invite['status'],
+            email_sent=updated_invite['email_sent'],
+            email_sent_at=updated_invite['email_sent_at'],
+            email_error=updated_invite['email_error'],
+            created_at=updated_invite['created_at']
         )
 
 @api_router.get("/invites", response_model=List[TestInvite])
@@ -1021,7 +1039,7 @@ async def get_invites(
         
         query = f"""
             SELECT id, test_id, applicant_email, applicant_name, invited_by,
-                   invite_token, scheduled_date, status, created_at
+                   invite_token, scheduled_date, status, email_sent, email_sent_at, email_error, created_at
             FROM test_invites
             WHERE {where_clause}
             ORDER BY created_at DESC
@@ -1038,8 +1056,55 @@ async def get_invites(
             invite_token=str(row['invite_token']),
             scheduled_date=row['scheduled_date'],
             status=row['status'],
+            email_sent=row['email_sent'],
+            email_sent_at=row['email_sent_at'],
+            email_error=row['email_error'],
             created_at=row['created_at']
         ) for row in rows]
+
+@api_router.post("/invites/{invite_id}/retry-email")
+async def retry_invite_email(invite_id: str, admin: User = Depends(get_admin_user)):
+    async with db_pool.acquire() as conn:
+        # Get invite details
+        invite_row = await conn.fetchrow("""
+            SELECT ti.*, t.title as test_title
+            FROM test_invites ti
+            JOIN tests t ON ti.test_id = t.id
+            WHERE ti.id = $1
+        """, uuid.UUID(invite_id))
+        
+        if not invite_row:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        
+        # Send email
+        invite_url = f"https://your-domain.com/test-invite/{invite_row['invite_token']}"
+        email_body = f"""
+        Hi {invite_row['applicant_name']},
+        
+        You have been invited to take a pre-interview test: {invite_row['test_title']}
+        
+        Please click the link below to schedule your test:
+        {invite_url}
+        
+        Best regards,
+        Interview Team
+        """
+        
+        # Try to send email
+        email_sent = await send_email(invite_row['applicant_email'], f"Test Invitation: {invite_row['test_title']}", email_body, admin.id)
+        
+        # Update invite with email status
+        await conn.execute("""
+            UPDATE test_invites 
+            SET email_sent = $1, email_sent_at = $2, email_error = $3
+            WHERE id = $4
+        """, email_sent, datetime.now(timezone.utc) if email_sent else None, 
+             None if email_sent else "Email sending failed", uuid.UUID(invite_id))
+        
+        if email_sent:
+            return {"message": "Email sent successfully", "email_sent": True}
+        else:
+            return {"message": "Failed to send email", "email_sent": False}
 
 @api_router.get("/invites/token/{token}")
 async def get_invite_by_token(token: str):
