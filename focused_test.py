@@ -25,7 +25,7 @@ def test_submission_flow():
         
     admin_token = login_response.json()['access_token']
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
-    print("✅ Admin login successful")
+    print(" Admin login successful")
     
     # 2. Applicant Login
     print("\n2. Applicant Login...")
@@ -40,7 +40,7 @@ def test_submission_flow():
         
     applicant_token = applicant_response.json()['access_token']
     applicant_headers = {"Authorization": f"Bearer {applicant_token}"}
-    print("✅ Applicant login successful")
+    print(" Applicant login successful")
     
     # 3. Create Test with Multiple Choice Questions
     print("\n3. Creating test with multiple choice questions...")
@@ -77,7 +77,7 @@ def test_submission_flow():
         return False
         
     test_id = test_response.json()['id']
-    print(f"✅ Test created with ID: {test_id}")
+    print(f" Test created with ID: {test_id}")
     
     # 4. Create Fresh Test Invitation
     print("\n4. Creating fresh test invitation...")
@@ -93,7 +93,7 @@ def test_submission_flow():
         return False
         
     invite_token = invite_response.json()['invite_token']
-    print(f"✅ Invitation created with token: {invite_token[:20]}...")
+    print(f" Invitation created with token: {invite_token[:20]}...")
     
     # 5. Admin Monitoring - Check Invites
     print("\n5. Admin monitoring - checking invites...")
@@ -103,7 +103,7 @@ def test_submission_flow():
         return False
         
     invites = invites_response.json()
-    print(f"✅ Admin can see {len(invites)} invitations")
+    print(f" Admin can see {len(invites)} invitations")
     
     # Check invitation by token instead (this should work)
     token_response = requests.get(f"{base_url}/invites/token/{invite_token}")
@@ -113,7 +113,7 @@ def test_submission_flow():
         
     token_data = token_response.json()
     initial_status = token_data['invite']['status']
-    print(f"✅ Initial invitation status: {initial_status}")
+    print(f" Initial invitation status: {initial_status}")
     
     # 6. Start Test via /start-test/{token}
     print("\n6. Starting test via /start-test endpoint...")
@@ -123,7 +123,7 @@ def test_submission_flow():
         return False
         
     start_data = start_response.json()
-    print(f"✅ Test started successfully, status: {start_data.get('status')}")
+    print(f" Test started successfully, status: {start_data.get('status')}")
     
     # 7. Verify Status Update (sent → in_progress)
     print("\n7. Verifying status update to 'in_progress'...")
@@ -134,7 +134,7 @@ def test_submission_flow():
         
     status_data = status_response.json()
     current_status = status_data['invite']['status']
-    print(f"✅ Status updated to: {current_status}")
+    print(f" Status updated to: {current_status}")
     
     if current_status != 'in_progress':
         print(f"❌ Expected 'in_progress', got '{current_status}'")
@@ -157,13 +157,13 @@ def test_submission_flow():
         
     submit_data = submit_response.json()
     score = submit_data.get('score')
-    print(f"✅ Test submitted successfully, score: {score}%")
+    print(f" Test submitted successfully, score: {score}%")
     
     # 9. Verify Score Calculation
     print("\n9. Verifying score calculation...")
     expected_score = 100.0  # Both answers correct
     if score == expected_score:
-        print(f"✅ Score calculation correct: {score}%")
+        print(f" Score calculation correct: {score}%")
     else:
         print(f"❌ Score calculation incorrect. Expected: {expected_score}%, Got: {score}%")
         return False
@@ -177,7 +177,7 @@ def test_submission_flow():
         
     final_status_data = final_status_response.json()
     final_status = final_status_data['invite']['status']
-    print(f"✅ Final status: {final_status}")
+    print(f" Final status: {final_status}")
     
     if final_status != 'completed':
         print(f"❌ Expected 'completed', got '{final_status}'")
@@ -192,13 +192,13 @@ def test_submission_flow():
         return False
         
     results = results_response.json()
-    print(f"✅ Admin can see {len(results)} test results")
+    print(f" Admin can see {len(results)} test results")
     
     # 12. Test Error Handling - Invalid Token
     print("\n12. Testing error handling with invalid token...")
     invalid_response = requests.post(f"{base_url}/start-test/invalid-token-123")
     if invalid_response.status_code == 404:
-        print("✅ Invalid token properly rejected")
+        print(" Invalid token properly rejected")
     else:
         print(f"❌ Invalid token handling failed: {invalid_response.status_code}")
         return False
@@ -208,13 +208,13 @@ def test_submission_flow():
     malformed_data = {"invalid_field": "test"}
     malformed_response = requests.post(f"{base_url}/submit-test/{invite_token}", json=malformed_data)
     if malformed_response.status_code == 422:
-        print("✅ Malformed data properly rejected")
+        print(" Malformed data properly rejected")
     else:
         print(f"❌ Malformed data handling failed: {malformed_response.status_code}")
     
     print("\n" + "=" * 60)
     print("🎉 COMPLETE SUBMISSION FLOW TEST PASSED!")
-    print("✅ All critical functionality verified:")
+    print(" All critical functionality verified:")
     print("   - Fresh test invitation creation")
     print("   - Test start via /start-test/{token}")
     print("   - Proper answer format submission via /submit-test/{token}")

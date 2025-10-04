@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar } from '@/components/ui/calendar';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import '../styles/datepicker.css';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CalendarIcon, Clock, FileText, User, CheckCircle } from 'lucide-react';
@@ -40,7 +43,7 @@ const TestInvite = () => {
       }
     } catch (error) {
       console.error('Failed to fetch invite details:', error);
-      alert('Invalid or expired invite link');
+      toast.error('Invalid or expired invite link');
     } finally {
       setLoading(false);
     }
@@ -48,7 +51,7 @@ const TestInvite = () => {
 
   const handleSchedule = async () => {
     if (!selectedDate || !selectedTime) {
-      alert('Please select both date and time');
+      toast.error('Please select both date and time');
       return;
     }
 
@@ -62,7 +65,7 @@ const TestInvite = () => {
         scheduled_date: scheduledDateTime.toISOString()
       });
 
-      alert('Test scheduled successfully!');
+      toast.success('Test scheduled successfully!');
       setStep('confirmed');
       
       // Update invite status
@@ -73,7 +76,7 @@ const TestInvite = () => {
       }));
     } catch (error) {
       console.error('Failed to schedule test:', error);
-      alert('Failed to schedule test');
+      toast.error('Failed to schedule test');
     } finally {
       setScheduling(false);
     }
@@ -202,48 +205,102 @@ const TestInvite = () => {
               <CardContent className="space-y-6">
                 {/* Date Selection */}
                 <div>
-                  <Label className="text-base font-medium mb-3 block">Select Date</Label>
+                  <Label className="text-base font-medium mb-3 block flex items-center">
+                    <CalendarIcon className="h-4 w-4 mr-2 text-blue-600" />
+                    Select Date
+                  </Label>
                   <div className="flex justify-center">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      disabled={(date) => date < new Date() || date < new Date(Date.now() - 86400000)}
-                      className="rounded-lg border border-gray-200 bg-white/80 shadow-sm"
-                      data-testid="date-picker"
-                    />
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-4 w-full max-w-sm">
+                      <DatePicker
+                        selected={selectedDate}
+                        onChange={setSelectedDate}
+                        minDate={new Date()}
+                        dateFormat="MMMM d, yyyy"
+                        showPopperArrow={false}
+                        placeholderText="Select a date"
+                        className="w-full p-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        calendarClassName="shadow-lg border border-gray-200 rounded-lg"
+                        dayClassName={(date) => {
+                          const today = new Date();
+                          const isToday = date.toDateString() === today.toDateString();
+                          const isSelected = selectedDate && date.toDateString() === selectedDate.toDateString();
+                          
+                          if (isSelected) return 'bg-blue-600 text-white hover:bg-blue-700';
+                          if (isToday) return 'bg-blue-100 text-blue-900 font-semibold';
+                          return 'hover:bg-gray-100';
+                        }}
+                        renderCustomHeader={({
+                          monthDate,
+                          customHeaderCount,
+                          decreaseMonth,
+                          increaseMonth,
+                        }) => (
+                          <div className="flex items-center justify-between p-3 border-b">
+                            <button
+                              type="button"
+                              onClick={decreaseMonth}
+                              className="p-1 hover:bg-gray-100 rounded"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                              </svg>
+                            </button>
+                            <h2 className="text-lg font-semibold text-gray-900">
+                              {monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </h2>
+                            <button
+                              type="button"
+                              onClick={increaseMonth}
+                              className="p-1 hover:bg-gray-100 rounded"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                        data-testid="date-picker"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Time Selection */}
                 {selectedDate && (
                   <div className="animate-fade-in">
-                    <Label className="text-base font-medium mb-3 block">Select Time</Label>
-                    <Select value={selectedTime} onValueChange={setSelectedTime}>
-                      <SelectTrigger className="w-full bg-white/80" data-testid="time-picker">
-                        <SelectValue placeholder="Choose a time slot" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {timeSlots.map(time => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-base font-medium mb-3 block flex items-center">
+                      <Clock className="h-4 w-4 mr-2 text-blue-600" />
+                      Select Time
+                    </Label>
+                    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+                      <Select value={selectedTime} onValueChange={setSelectedTime}>
+                        <SelectTrigger className="w-full bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500" data-testid="time-picker">
+                          <SelectValue placeholder="Choose a time slot" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {timeSlots.map(time => (
+                            <SelectItem key={time} value={time} className="hover:bg-blue-50">
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 )}
 
                 {/* Selected Date/Time Summary */}
                 {selectedDate && selectedTime && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 animate-fade-in">
-                    <div className="flex items-center space-x-3">
-                      <CalendarIcon className="h-5 w-5 text-indigo-600" />
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 animate-fade-in shadow-sm">
+                    <div className="flex items-center space-x-4">
+                      <div className="bg-blue-100 p-2 rounded-full">
+                        <CheckCircle className="h-6 w-6 text-blue-600" />
+                      </div>
                       <div>
-                        <p className="font-medium text-indigo-900">
-                          {format(selectedDate, 'EEEE, MMMM do, yyyy')}
+                        <p className="text-sm font-semibold text-blue-900 mb-1">Selected Schedule</p>
+                        <p className="text-lg font-medium text-blue-800">
+                          {format(selectedDate, 'EEEE, MMMM do, yyyy')} at {selectedTime}
                         </p>
-                        <p className="text-indigo-700">at {selectedTime}</p>
                       </div>
                     </div>
                   </div>

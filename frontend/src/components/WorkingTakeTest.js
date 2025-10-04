@@ -1,7 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
+import BrandIcon from '../components/ui/BrandIcon';
+
+// WebRTC Configuration
+const RTC_CONFIGURATION = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
+};
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -19,31 +32,100 @@ const WorkingTakeTest = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [testStarted, setTestStarted] = useState(false);
   const [videoStream, setVideoStream] = useState(null);
+  const [inviteId, setInviteId] = useState(null);
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [webrtcConnected, setWebrtcConnected] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', onConfirm: null });
 
   useEffect(() => {
     fetchTestDetails();
-    return () => {
+    
+    // Add cleanup function for page unload
+    const handleBeforeUnload = () => {
+      // Stop video stream
       if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
       }
+      // Close WebRTC connection
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      // End WebRTC session
+      if (inviteId) {
+        navigator.sendBeacon(`${API}/webrtc/end-session/${inviteId}`);
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      // Cleanup video stream
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      // Cleanup WebRTC connection
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      // End WebRTC session
+      if (inviteId) {
+        axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
+      }
+      // Remove event listener
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [token]);
 
+  // Effect to handle video stream assignment - only runs when videoStream changes
   useEffect(() => {
+    if (videoStream && videoRef.current) {
+      const videoElement = videoRef.current;
+      
+      // Only set if not already set to avoid re-renders and blinking
+      if (videoElement.srcObject !== videoStream) {
+        console.log('Setting video stream in useEffect');
+        videoElement.srcObject = videoStream;
+        
+        // Add event listeners to debug
+        const onLoadedMetadata = () => console.log('Video metadata loaded');
+        const onCanPlay = () => console.log('Video can play');
+        const onPlay = () => console.log('Video started playing');
+        
+        videoElement.addEventListener('loadedmetadata', onLoadedMetadata);
+        videoElement.addEventListener('canplay', onCanPlay);
+        videoElement.addEventListener('play', onPlay);
+        
+        videoElement.play().catch(e => console.error('Video play failed:', e));
+        
+        // Cleanup listeners
+        return () => {
+          videoElement.removeEventListener('loadedmetadata', onLoadedMetadata);
+          videoElement.removeEventListener('canplay', onCanPlay);
+          videoElement.removeEventListener('play', onPlay);
+        };
+      }
+    }
+  }, [videoStream]);
+
+  useEffect(() => {
+    let timer;
     if (testStarted && timeLeft > 0) {
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
-            handleSubmitTest();
+            // Use setTimeout to avoid calling handleSubmitTest during render
+            setTimeout(() => handleSubmitTest(), 0);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-      
-      return () => clearInterval(timer);
     }
-  }, [testStarted, timeLeft]);
+    
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [testStarted]); // Only depend on testStarted, not timeLeft
 
   const fetchTestDetails = async () => {
     try {
@@ -54,6 +136,7 @@ const WorkingTakeTest = () => {
       setInvite(response.data.invite);
       setTest(response.data.test);
       setTimeLeft(response.data.test.duration_minutes * 60);
+      setInviteId(response.data.invite.id);
       console.log('Test loaded successfully');
     } catch (error) {
       console.error('Failed to fetch test details:', error);
@@ -65,48 +148,205 @@ const WorkingTakeTest = () => {
     }
   };
 
-  const startVideo = async () => {
+  const startVideoAndWebRTC = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
+      console.log('Starting video and WebRTC...');
+      
+      // Get user's media stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
       });
+      console.log('Got media stream:', stream);
+      console.log('Video tracks:', stream.getVideoTracks());
+      
       setVideoStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+
+      // Initialize WebRTC session for monitoring
+      if (inviteId) {
+        await initializeWebRTCSession(inviteId);
       }
+
+      // Set up WebRTC peer connection as the "offerer" (applicant initiates)
+      const pc = new RTCPeerConnection(RTC_CONFIGURATION);
+
+      // Add local stream to peer connection
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+
+      // Handle ICE candidates
+      pc.onicecandidate = async (event) => {
+        if (event.candidate && inviteId) {
+          try {
+            await axios.post(`${API}/webrtc/ice-candidate`, {
+              candidate: event.candidate,
+              invite_id: inviteId
+            });
+          } catch (error) {
+            console.error('Failed to send ICE candidate:', error);
+          }
+        }
+      };
+
+      // Handle connection state changes
+      pc.onconnectionstatechange = () => {
+        console.log('WorkingTakeTest - Connection state:', pc.connectionState);
+        switch (pc.connectionState) {
+          case 'connected':
+            console.log('WorkingTakeTest - WebRTC connected successfully');
+            setWebrtcConnected(true);
+            toast.success('Video monitoring connected');
+            break;
+          case 'connecting':
+            console.log('WorkingTakeTest - WebRTC connecting...');
+            break;
+          case 'failed':
+          case 'closed':
+            console.log('WorkingTakeTest - WebRTC connection failed');
+            setWebrtcConnected(false);
+            break;
+          default:
+            console.log('WorkingTakeTest - Connection state changed:', pc.connectionState);
+            break;
+        }
+      };
+
+      // Create and send offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      console.log('WorkingTakeTest - Created and set local offer');
+
+      // Send offer to admin via backend
+      if (inviteId) {
+        try {
+          const response = await axios.post(`${API}/webrtc/offer`, {
+            type: 'offer',
+            sdp: offer.sdp,
+            invite_id: inviteId
+          });
+          console.log('WorkingTakeTest - Offer sent successfully:', response.status);
+        } catch (error) {
+          console.error('WorkingTakeTest - Failed to send offer:', error.response?.data || error.message);
+        }
+
+        // Wait a bit for admin to initialize session, then poll for answer
+        setTimeout(() => {
+          console.log('WorkingTakeTest - Starting to poll for WebRTC answer');
+          pollForWebRTCAnswer(pc);
+        }, 1000);
+      }
+
+      setPeerConnection(pc);
       return true;
     } catch (error) {
-      console.error('Failed to start video:', error);
+      console.error('Failed to start video and WebRTC:', error);
       return false;
     }
   };
 
-  const handleStartTest = async () => {
-    const videoStarted = await startVideo();
-    let canProceed = false;
-    
-    if (videoStarted) {
-      canProceed = true;
-      toast.success('Test started! You are being monitored via video.');
-    } else {
-      const proceedWithoutVideo = window.confirm(
-        'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?'
-      );
-      if (proceedWithoutVideo) {
-        canProceed = true;
-        toast.info('Test started without video monitoring (testing mode).');
+  const initializeWebRTCSession = async (inviteId) => {
+    try {
+      // Initialize WebRTC session in backend
+      await axios.post(`${API}/webrtc/start-session/${inviteId}`);
+      console.log('WebRTC session initialized');
+    } catch (error) {
+      console.error('Failed to initialize WebRTC session:', error);
+    }
+  };
+
+  const pollForWebRTCAnswer = async (pc) => {
+    if (!inviteId) return;
+
+    try {
+      const response = await axios.get(`${API}/webrtc/signals/${inviteId}`);
+      const signals = response.data.signals;
+
+      // Find the latest answer
+      const answerSignal = signals
+        .filter(signal => signal.type === 'answer')
+        .pop();
+
+      if (answerSignal && !webrtcConnected) {
+        const answer = {
+          type: 'answer',
+          sdp: answerSignal.data.sdp
+        };
+
+        await pc.setRemoteDescription(answer);
+        console.log('WorkingTakeTest - WebRTC answer received and set');
+      }
+
+      // Find ICE candidates and add them
+      const iceCandidates = signals.filter(signal => signal.type === 'ice_candidate');
+      for (const candidateSignal of iceCandidates) {
+        if (candidateSignal.data.candidate) {
+          try {
+            await pc.addIceCandidate(candidateSignal.data.candidate);
+          } catch (error) {
+            console.error('Failed to add ICE candidate:', error);
+          }
+        }
+      }
+
+      // Continue polling if not connected
+      if (!webrtcConnected) {
+        console.log('WorkingTakeTest - Continuing to poll for WebRTC answer...');
+        setTimeout(() => pollForWebRTCAnswer(pc), 2000);
+      } else {
+        console.log('WorkingTakeTest - WebRTC connected, stopping polling');
+      }
+    } catch (error) {
+      console.error('Failed to poll for WebRTC answer:', error);
+      // Continue polling on error
+      if (!webrtcConnected) {
+        setTimeout(() => pollForWebRTCAnswer(pc), 2000);
       }
     }
-    
-    if (canProceed) {
-      try {
-        // Mark test as started in the backend
-        await axios.post(`${API}/start-test/${token}`);
+  };
+
+  const handleStartTest = async () => {
+    try {
+      // First start the test in backend to set status to 'in_progress'
+      await axios.post(`${API}/start-test/${token}`);
+
+      // Then start video and WebRTC
+      const videoStarted = await startVideoAndWebRTC();
+      if (videoStarted) {
         setTestStarted(true);
-      } catch (error) {
-        console.error('Failed to start test:', error);
-        toast.error('Failed to start test monitoring');
+        toast.success('Test started! Video monitoring enabled.');
+      } else {
+        setConfirmDialog({
+          open: true,
+          title: 'Camera Access Denied',
+          message: 'Camera access was denied. The test requires video monitoring for verification. Do you want to proceed anyway for testing purposes?',
+          onConfirm: () => {
+            setTestStarted(true);
+            toast.info('Test started without video monitoring (testing mode).');
+            setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to start test:', error);
+      
+      // Handle specific error cases
+      if (error.response?.status === 409) {
+        // User has an incomplete test in progress
+        toast.error(error.response.data.detail, { duration: 8000 });
+        
+        // Show additional help dialog
+        setConfirmDialog({
+          open: true,
+          title: 'Test Already In Progress',
+          message: error.response.data.detail + '\n\nWould you like to contact the administrator for help?',
+          onConfirm: () => {
+            toast.info('Please contact your administrator to reset your previous test.');
+            setConfirmDialog({ open: false, title: '', message: '', onConfirm: null });
+          }
+        });
+      } else {
+        toast.error('Failed to start test: ' + (error.response?.data?.detail || error.message));
       }
     }
   };
@@ -146,6 +386,21 @@ const WorkingTakeTest = () => {
       
       const response = await axios.post(`${API}/submit-test/${token}`, submission);
       console.log('Submission response:', response.data);
+      
+      // End WebRTC session
+      if (inviteId) {
+        await axios.post(`${API}/webrtc/end-session/${inviteId}`).catch(console.error);
+      }
+      
+      // Stop video stream and close peer connection
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        setVideoStream(null);
+      }
+      if (peerConnection) {
+        peerConnection.close();
+        setPeerConnection(null);
+      }
       
       toast.success('Test submitted successfully! Score: ' + (response.data.score || 0) + '%');
       navigate('/');
@@ -208,19 +463,11 @@ const WorkingTakeTest = () => {
           textAlign: 'center'
         }}>
           <div style={{
-            width: '80px',
-            height: '80px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '20px',
             display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 24px',
-            color: 'white',
-            fontSize: '32px',
-            fontWeight: 'bold'
+            margin: '0 auto 24px'
           }}>
-            📝
+            <BrandIcon className="h-20 w-20" />
           </div>
           
           <h1 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>
@@ -292,13 +539,16 @@ const WorkingTakeTest = () => {
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
-                {test?.title || 'Test'}
-              </h1>
-              <p style={{ color: '#6b7280', margin: 0 }}>
-                Question {currentQuestionIndex + 1} of {test?.questions?.length || 0}
-              </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <BrandIcon className="h-8 w-8" />
+              <div>
+                <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>
+                  {test?.title || 'Test'}
+                </h1>
+                <p style={{ color: '#6b7280', margin: 0 }}>
+                  Question {currentQuestionIndex + 1} of {test?.questions?.length || 0}
+                </p>
+              </div>
             </div>
             <div style={{ 
               display: 'flex', 
@@ -308,7 +558,7 @@ const WorkingTakeTest = () => {
               fontWeight: '600',
               color: timeLeft < 300 ? '#dc2626' : '#374151'
             }}>
-              <span>⏱️ {formatTime(timeLeft)}</span>
+              <span> {formatTime(timeLeft)}</span>
             </div>
           </div>
         </div>
@@ -517,15 +767,26 @@ const WorkingTakeTest = () => {
               Video Monitoring
             </h3>
             <video
-              ref={videoRef}
+              ref={(el) => {
+                videoRef.current = el;
+                // Only set srcObject if element exists, has no current source, and we have a stream
+                if (el && videoStream && !el.srcObject) {
+                  console.log('Setting srcObject in ref callback');
+                  el.srcObject = videoStream;
+                  el.play().catch(e => console.error('Video play failed:', e));
+                }
+              }}
               autoPlay
               muted
+              playsInline
+              controls={false}
               style={{
                 width: '100%',
                 height: '200px',
                 borderRadius: '8px',
-                background: '#000',
-                objectFit: 'cover'
+                background: '#333',
+                objectFit: 'cover',
+                transform: 'scaleX(-1)' // Mirror the video like a selfie camera
               }}
             />
             <p style={{ 
@@ -534,11 +795,55 @@ const WorkingTakeTest = () => {
               marginTop: '8px',
               textAlign: 'center'
             }}>
-              🔴 Recording for verification
+              {videoStream ? '🔴 Recording for verification' : '📷 Camera not active'}
             </p>
+            {/* Temporary debug info */}
+            <div style={{ fontSize: '10px', color: '#999', textAlign: 'center', marginTop: '4px' }}>
+              Stream: {videoStream ? 'Active' : 'None'} | 
+              Tracks: {videoStream ? videoStream.getVideoTracks().length : 0} |
+              Ref: {videoRef.current ? 'Ready' : 'Null'}
+            </div>
+            {/* Temporary debug button */}
+            {!testStarted && (
+              <button 
+                onClick={startVideoAndWebRTC}
+                style={{ 
+                  fontSize: '10px', 
+                  padding: '4px 8px', 
+                  marginTop: '4px',
+                  background: '#059669',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Test Video + WebRTC
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-line">
+              {confirmDialog.message}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDialog({ open: false, title: '', message: '', onConfirm: null })}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDialog.onConfirm}>
+              Proceed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

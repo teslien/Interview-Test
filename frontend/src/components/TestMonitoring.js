@@ -1,20 +1,47 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../App';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Video, Users, Clock, AlertCircle, LogOut } from 'lucide-react';
+import { Video, Users, Clock, AlertCircle, LogOut, ArrowLeft } from 'lucide-react';
+
+// WebRTC Configuration
+const RTC_CONFIGURATION = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
+};
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const TestMonitoring = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTests, setActiveTests] = useState([]);
   const [selectedTest, setSelectedTest] = useState(null);
   const [loading, setLoading] = useState(false);
   const videoRef = useRef(null);
+
+  // WebRTC state for admin monitoring
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [webrtcConnected, setWebrtcConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  
+  // Add ref to track polling timeout
+  const pollingTimeoutRef = useRef(null);
+  
+  // Add refs to track current values for cleanup
+  const peerConnectionRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const selectedTestRef = useRef(null);
 
   useEffect(() => {
     fetchActiveTests();
@@ -23,6 +50,81 @@ const TestMonitoring = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Cleanup WebRTC connections when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clear any pending polling timeout
+      if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+      }
+      
+      // Close peer connection
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+      
+      // Stop remote stream
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      // End WebRTC session if there's a selected test
+      if (selectedTestRef.current) {
+        axios.post(`${API}/webrtc/end-session/${selectedTestRef.current.id}`).catch(console.error);
+      }
+    };
+  }, []); // Empty dependency array - only run on unmount
+
+  // Keep refs in sync with state values
+  useEffect(() => {
+    peerConnectionRef.current = peerConnection;
+  }, [peerConnection]);
+
+  useEffect(() => {
+    remoteStreamRef.current = remoteStream;
+  }, [remoteStream]);
+
+  useEffect(() => {
+    selectedTestRef.current = selectedTest;
+  }, [selectedTest]);
+
+  // Handle pre-selected applicant from notification
+  useEffect(() => {
+    const preselectedData = localStorage.getItem('preselectedApplicant');
+    if (preselectedData) {
+      try {
+        const { invite_id, applicant_email, timestamp } = JSON.parse(preselectedData);
+        
+        // Check if the data is recent (within 5 minutes)
+        if (Date.now() - timestamp < 5 * 60 * 1000) {
+          // Find the matching test in activeTests
+          const matchingTest = activeTests.find(test => 
+            test.id === invite_id || test.applicant_email === applicant_email
+          );
+          
+          if (matchingTest && matchingTest.can_monitor) {
+            // Auto-select the applicant
+            setSelectedTest(matchingTest);
+            setConnectionStatus('connecting');
+            toast.info(`Auto-selected ${matchingTest.applicant_name} for monitoring`);
+            
+            // Clear the preselected data
+            localStorage.removeItem('preselectedApplicant');
+          } else if (matchingTest && !matchingTest.can_monitor) {
+            toast.warning(`${applicant_email} is not currently taking a test`);
+            localStorage.removeItem('preselectedApplicant');
+          }
+        } else {
+          // Data is too old, remove it
+          localStorage.removeItem('preselectedApplicant');
+        }
+      } catch (error) {
+        console.error('Error parsing preselected applicant data:', error);
+        localStorage.removeItem('preselectedApplicant');
+      }
+    }
+  }, [activeTests]);
+
   const fetchActiveTests = async () => {
     try {
       // Get all invitations (admin can see all)
@@ -30,24 +132,229 @@ const TestMonitoring = () => {
       const response = await axios.get(`${API}/invites`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const inProgressTests = response.data.filter(invite => 
-        invite.status === 'in_progress' || invite.status === 'sent'
+
+      // Filter for tests that are in progress and could be monitored
+      const monitorableTests = response.data.filter(invite =>
+        invite.status === 'in_progress' ||
+        (invite.status === 'sent' && invite.scheduled_date)
       );
-      console.log('Active tests found:', inProgressTests);
-      setActiveTests(inProgressTests);
+
+      console.log('Monitorable tests found:', monitorableTests);
+
+      // Enhance test data with additional info if needed
+      const enhancedTests = monitorableTests.map(invite => ({
+        ...invite,
+        test_title: invite.test_title || invite.test?.title || 'Test in Progress',
+        can_monitor: invite.status === 'in_progress'
+      }));
+
+      setActiveTests(enhancedTests);
     } catch (error) {
       console.error('Failed to fetch active tests:', error);
       toast.error('Failed to fetch active tests: ' + (error.response?.data?.detail || error.message));
     }
   };
 
-  const handleMonitorTest = (test) => {
-    setSelectedTest(test);
-    toast.info(`Monitoring test for ${test.applicant_name}`);
+  const handleGoBack = () => {
+    // Clear any preselected data when going back
+    localStorage.removeItem('preselectedApplicant');
+    navigate('/admin');
   };
 
-  const handleStopMonitoring = () => {
+  const handleMonitorTest = async (invite) => {
+    if (!invite.can_monitor) {
+      toast.error('Test must be in progress to start monitoring');
+      return;
+    }
+
+    setSelectedTest(invite);
+    setConnectionStatus('connecting');
+    toast.info(`Monitoring test for ${invite.applicant_name}`);
+
+    // Initialize WebRTC session first (use invite.id, not test.id)
+    try {
+      await axios.post(`${API}/webrtc/start-session/${invite.id}`);
+    } catch (error) {
+      console.error('Failed to initialize WebRTC session:', error);
+      toast.error('Failed to initialize monitoring session');
+      return;
+    }
+
+    // Initialize WebRTC connection as the admin (answerer)
+    await startWebRTCMonitoring(invite.id);
+  };
+
+  const startWebRTCMonitoring = async (inviteId) => {
+    console.log('TestMonitoring - Starting WebRTC monitoring for invite:', inviteId);
+    try {
+      // Set up WebRTC peer connection as the "answerer" (admin responds to applicant offer)
+      const pc = new RTCPeerConnection(RTC_CONFIGURATION);
+
+      // Handle remote stream
+      pc.ontrack = (event) => {
+        console.log('Received remote stream:', event.streams[0]);
+        setRemoteStream(event.streams[0]);
+        if (videoRef.current) {
+          videoRef.current.srcObject = event.streams[0];
+          videoRef.current.play().catch(e => console.error('Video play failed:', e));
+        }
+      };
+
+      // Handle ICE candidates from applicant
+      pc.onicecandidate = async (event) => {
+        if (event.candidate) {
+          try {
+            await axios.post(`${API}/webrtc/ice-candidate`, {
+              candidate: event.candidate,
+              invite_id: inviteId
+            });
+          } catch (error) {
+            console.error('Failed to send ICE candidate:', error);
+          }
+        }
+      };
+
+      // Handle connection state changes
+      pc.onconnectionstatechange = () => {
+        console.log('TestMonitoring - Connection state:', pc.connectionState);
+        switch (pc.connectionState) {
+          case 'connected':
+            console.log('TestMonitoring - WebRTC connected successfully');
+            setConnectionStatus('connected');
+            setWebrtcConnected(true);
+            toast.success('Connected to applicant video feed');
+            break;
+          case 'connecting':
+            console.log('TestMonitoring - WebRTC connecting...');
+            setConnectionStatus('connecting');
+            break;
+          case 'failed':
+          case 'closed':
+            console.log('TestMonitoring - WebRTC connection failed');
+            setConnectionStatus('failed');
+            setWebrtcConnected(false);
+            toast.error('Video connection failed');
+            break;
+          default:
+            console.log('TestMonitoring - Connection state changed:', pc.connectionState);
+            break;
+        }
+      };
+
+      // Poll for offer from applicant
+      pollForWebRTCOffer(pc, inviteId);
+
+      setPeerConnection(pc);
+    } catch (error) {
+      console.error('Failed to start WebRTC monitoring:', error);
+      setConnectionStatus('failed');
+      toast.error('Failed to start video monitoring');
+    }
+  };
+
+  const pollForWebRTCOffer = async (pc, inviteId) => {
+    try {
+      const response = await axios.get(`${API}/webrtc/signals/${inviteId}`);
+      const signals = response.data.signals;
+
+      // Find the latest offer
+      const offerSignal = signals
+        .filter(signal => signal.type === 'offer')
+        .pop();
+
+      if (offerSignal && !webrtcConnected) {
+        console.log('TestMonitoring - Found offer signal:', offerSignal);
+        console.log('TestMonitoring - Offer SDP length:', offerSignal.data.sdp.length);
+        const offer = {
+          type: 'offer',
+          sdp: offerSignal.data.sdp
+        };
+
+        try {
+          await pc.setRemoteDescription(offer);
+          console.log('TestMonitoring - WebRTC offer received and set');
+
+          // Create and send answer
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          console.log('TestMonitoring - Created answer with SDP length:', answer.sdp.length);
+
+          console.log('TestMonitoring - Sending answer to backend');
+          const response = await axios.post(`${API}/webrtc/answer`, {
+            type: 'answer',
+            sdp: answer.sdp,
+            invite_id: inviteId
+          });
+          console.log('TestMonitoring - WebRTC answer sent successfully:', response.status);
+        } catch (error) {
+          console.error('TestMonitoring - Error processing offer:', error);
+          throw error;
+        }
+      } else if (!offerSignal) {
+        console.log('TestMonitoring - No offer signal found yet, signals count:', signals.length);
+      }
+
+      // Find ICE candidates and add them
+      const iceCandidates = signals.filter(signal => signal.type === 'ice_candidate');
+      for (const candidateSignal of iceCandidates) {
+        if (candidateSignal.data.candidate && pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(candidateSignal.data.candidate);
+          } catch (error) {
+            console.error('Failed to add ICE candidate:', error);
+          }
+        }
+      }
+
+      // Continue polling if not connected
+      if (!webrtcConnected) {
+        console.log('TestMonitoring - Continuing to poll for WebRTC offer...');
+        pollingTimeoutRef.current = setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
+      } else {
+        console.log('TestMonitoring - WebRTC connected, stopping polling');
+      }
+    } catch (error) {
+      console.error('Failed to poll for WebRTC offer:', error);
+      // Continue polling on error
+      if (!webrtcConnected) {
+        pollingTimeoutRef.current = setTimeout(() => pollForWebRTCOffer(pc, inviteId), 2000);
+      }
+    }
+  };
+
+  const handleStopMonitoring = async () => {
+    // Clear any pending polling timeout
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+
+    // End WebRTC session in backend
+    if (selectedTest) {
+      try {
+        await axios.post(`${API}/webrtc/end-session/${selectedTest.id}`);
+      } catch (error) {
+        console.error('Failed to end WebRTC session:', error);
+      }
+    }
+
+    // Close peer connection
+    if (peerConnection) {
+      peerConnection.close();
+    }
+
+    // Stop remote stream
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Clean up state
     setSelectedTest(null);
+    setPeerConnection(null);
+    setRemoteStream(null);
+    setWebrtcConnected(false);
+    setConnectionStatus('disconnected');
+
     toast.info('Stopped monitoring');
   };
 
@@ -58,6 +365,15 @@ const TestMonitoring = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
+              <Button
+                onClick={handleGoBack}
+                variant="outline"
+                size="sm"
+                className="flex items-center space-x-2 hover:bg-gray-50"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back to Dashboard</span>
+              </Button>
               <div className="h-10 w-10 bg-gradient-to-r from-red-600 to-orange-600 rounded-lg flex items-center justify-center">
                 <Video className="h-6 w-6 text-white" />
               </div>
@@ -98,32 +414,43 @@ const TestMonitoring = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {activeTests.map((test) => (
+                    {activeTests.map((invite) => (
                       <div
-                        key={test.id}
+                        key={invite.id}
                         className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                          selectedTest?.id === test.id
+                          selectedTest?.id === invite.id
                             ? 'border-red-500 bg-red-50'
-                            : 'border-gray-200 bg-white hover:border-red-300'
+                            : invite.can_monitor
+                              ? 'border-gray-200 bg-white hover:border-red-300'
+                              : 'border-gray-300 bg-gray-50'
                         }`}
-                        onClick={() => handleMonitorTest(test)}
+                        onClick={() => invite.can_monitor && handleMonitorTest(invite)}
                       >
                         <div className="flex items-center justify-between">
                           <div>
                             <h3 className="font-semibold text-gray-900">
-                              {test.applicant_name}
+                              {invite.applicant_name}
                             </h3>
                             <p className="text-sm text-gray-600">
-                              {test.test_title || 'Test in Progress'}
+                              {invite.test_title || 'Test in Progress'}
                             </p>
                           </div>
                           <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                            <span className="text-xs text-red-600">LIVE</span>
+                            {invite.can_monitor ? (
+                              <>
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="text-xs text-green-600">READY</span>
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                                <span className="text-xs text-yellow-600">WAITING</span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="mt-2 text-xs text-gray-500">
-                          Started: {new Date(test.created_at).toLocaleTimeString()}
+                          Started: {new Date(invite.created_at).toLocaleTimeString()}
                         </div>
                       </div>
                     ))}
@@ -148,13 +475,24 @@ const TestMonitoring = () => {
                     </span>
                   </div>
                   {selectedTest && (
-                    <Button
-                      onClick={handleStopMonitoring}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Stop Monitoring
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        onClick={() => setSelectedTest(null)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center space-x-1"
+                      >
+                        <ArrowLeft className="h-3 w-3" />
+                        <span>Back to List</span>
+                      </Button>
+                      <Button
+                        onClick={handleStopMonitoring}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Stop Monitoring
+                      </Button>
+                    </div>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -168,14 +506,47 @@ const TestMonitoring = () => {
                         className="w-full h-96 bg-black rounded-lg object-cover"
                         controls={false}
                         style={{ backgroundColor: '#000' }}
+                        autoPlay
+                        playsInline
+                        muted
                       />
-                      <div className="absolute top-4 left-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                        <span>LIVE</span>
+                      <div className={`absolute top-4 left-4 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-2 ${
+                        connectionStatus === 'connected' ? 'bg-green-500' :
+                        connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full animate-pulse ${
+                          connectionStatus === 'connected' ? 'bg-white' :
+                          connectionStatus === 'connecting' ? 'bg-white' : 'bg-white'
+                        }`}></div>
+                        <span>
+                          {connectionStatus === 'connected' ? 'LIVE' :
+                           connectionStatus === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
+                        </span>
                       </div>
                       <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded text-sm">
                         {selectedTest.applicant_name} - {selectedTest.test_title}
                       </div>
+
+                      {/* Connection Status Overlay */}
+                      {connectionStatus !== 'connected' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <div className="text-center text-white">
+                            {connectionStatus === 'connecting' && (
+                              <>
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                                <p>Connecting to applicant video...</p>
+                              </>
+                            )}
+                            {connectionStatus === 'failed' && (
+                              <>
+                                <AlertCircle className="h-12 w-12 mx-auto mb-4" />
+                                <p>Connection Failed</p>
+                                <p className="text-sm">Unable to establish video connection</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Test Information */}
@@ -205,12 +576,6 @@ const TestMonitoring = () => {
                       </div>
                     </div>
 
-                    {/* Placeholder for video feed */}
-                    <div className="text-center text-gray-500 mt-8">
-                      <AlertCircle className="h-8 w-8 mx-auto mb-2" />
-                      <p>Video monitoring is simulated for demo purposes.</p>
-                      <p className="text-sm">In production, this would show live video feed from the applicant's camera.</p>
-                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-20">

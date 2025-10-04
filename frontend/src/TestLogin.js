@@ -1,5 +1,6 @@
 import React from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -7,7 +8,7 @@ const API = `${BACKEND_URL}/api`;
 const TestLogin = () => {
   const testLogin = async () => {
     try {
-      alert('Starting test login...');
+      toast.info('Starting test login...');
       console.log('API URL:', API);
       
       const response = await axios.post(`${API}/auth/login`, { 
@@ -15,13 +16,13 @@ const TestLogin = () => {
         password: 'admin123' 
       });
       
-      alert('Login successful: ' + JSON.stringify(response.data));
+      toast.success('Login successful: ' + JSON.stringify(response.data));
       
       // Redirect manually
       window.location.href = '/admin';
       
     } catch (error) {
-      alert('Login failed: ' + error.message);
+      toast.error('Login failed: ' + error.message);
       console.error('Login error:', error);
     }
   };
@@ -59,7 +60,7 @@ const TestLogin = () => {
         </button>
         
         <button
-          onClick={() => alert('Alert test working!')}
+          onClick={() => toast.success('Alert test working!')}
           style={{
             padding: '12px 24px',
             background: '#48bb78',

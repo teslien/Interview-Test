@@ -23,7 +23,7 @@ def test_applicant_invites():
         
     applicant_token = applicant_response.json()['access_token']
     applicant_headers = {"Authorization": f"Bearer {applicant_token}"}
-    print("✅ Applicant login successful")
+    print(" Applicant login successful")
     
     # Test my-invites endpoint
     print("\n2. Testing /my-invites endpoint...")
@@ -34,7 +34,7 @@ def test_applicant_invites():
         return False
         
     invites = invites_response.json()
-    print(f"✅ Applicant can see {len(invites)} invitations")
+    print(f" Applicant can see {len(invites)} invitations")
     
     # Display invitation details
     for i, invite in enumerate(invites):

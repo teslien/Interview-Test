@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
+import { ThemeProvider } from './contexts/ThemeContext';
+
+// Styles
+import './styles/themes.css';
 
 // Components
 import SimpleLoginFixed from './components/SimpleLoginFixed';
 import AdminDashboard from './components/AdminDashboard';
 import ApplicantDashboard from './components/ApplicantDashboard';
+import CreateTestPage from './components/CreateTestPage';
 import TestInvite from './components/TestInvite';
 import WorkingTakeTest from './components/WorkingTakeTest';
 import DebugTakeTest from './components/DebugTakeTest';
@@ -70,12 +76,12 @@ const AuthProvider = ({ children }) => {
       setUser(userData);
       
       console.log('User set to:', userData);
-      alert('Login successful!');
+      toast.success('Login successful!');
       return userData;
     } catch (error) {
       console.error('Login error:', error);
       const message = error.response?.data?.detail || 'Login failed';
-      alert('Login failed: ' + message);
+      toast.error('Login failed: ' + message);
       throw error;
     }
   };
@@ -91,11 +97,11 @@ const AuthProvider = ({ children }) => {
         role
       });
       
-      alert('Registration successful! Please login.');
+      toast.success('Registration successful! Please login.');
     } catch (error) {
       console.error('Registration error:', error);
       const message = error.response?.data?.detail || 'Registration failed';
-      alert('Registration failed: ' + message);
+      toast.error('Registration failed: ' + message);
       throw error;
     }
   };
@@ -104,7 +110,7 @@ const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
-    alert('Logged out successfully');
+    toast.success('Logged out successfully');
   };
 
   const value = {
@@ -149,8 +155,9 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 function App() {
   return (
     <div className="App">
-      <AuthProvider>
-        <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<SimpleLoginFixed />} />
@@ -161,6 +168,12 @@ function App() {
             <Route path="/admin" element={
               <ProtectedRoute requiredRole="admin">
                 <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/admin/create-test" element={
+              <ProtectedRoute requiredRole="admin">
+                <CreateTestPage />
               </ProtectedRoute>
             } />
             
@@ -185,9 +198,10 @@ function App() {
             {/* Default Route */}
             <Route path="/" element={<DefaultRoute />} />
           </Routes>
-        </BrowserRouter>
-        <Toaster />
-      </AuthProvider>
+          </BrowserRouter>
+          <Toaster />
+        </AuthProvider>
+      </ThemeProvider>
     </div>
   );
 }

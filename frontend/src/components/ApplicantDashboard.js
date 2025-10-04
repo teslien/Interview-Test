@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { User, Calendar, Clock, CheckCircle, AlertCircle, LogOut, FileText, Users, Timer } from 'lucide-react';
+import BrandIcon from '@/components/ui/BrandIcon';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -16,6 +19,8 @@ const ApplicantDashboard = () => {
   const [upcomingTests, setUpcomingTests] = useState([]);
   const [completedTests, setCompletedTests] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedTest, setSelectedTest] = useState(null);
+  const [showTestDetails, setShowTestDetails] = useState(false);
 
   useEffect(() => {
     fetchApplicantData();
@@ -27,22 +32,47 @@ const ApplicantDashboard = () => {
       console.log('Fetching applicant data...');
       console.log('API URL:', `${API}/my-invites`);
       
-      // Fetch user's test invitations
-      const invitesResponse = await axios.get(`${API}/my-invites`);
+      // Fetch user's test invitations and submissions in parallel
+      const [invitesResponse, submissionsResponse] = await Promise.all([
+        axios.get(`${API}/my-invites`),
+        axios.get(`${API}/my-submissions`)
+      ]);
+      
       const invites = invitesResponse.data;
+      const submissions = submissionsResponse.data;
       
       console.log('Invites received:', invites);
+      console.log('Submissions received:', submissions);
+      
+      // Create a map of submissions by invite_id for easy lookup
+      const submissionMap = {};
+      submissions.forEach(submission => {
+        submissionMap[submission.invite_id] = submission;
+      });
       
       // Separate upcoming and completed tests
       const upcoming = invites.filter(invite => 
         invite.status === 'sent' || invite.status === 'scheduled' || invite.status === 'in_progress'
-      );
+      ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Sort by creation date (oldest first)
+      
+      // For completed tests, merge with submission data to get scores
       const completed = invites.filter(invite => 
         invite.status === 'completed'
-      );
+      ).map(invite => {
+        const submission = submissionMap[invite.id];
+        return {
+          ...invite,
+          score: submission ? Math.round(submission.final_score || 0) : 0,
+          auto_score: submission ? submission.auto_score : null,
+          manual_score: submission ? submission.manual_score : null,
+          scoring_status: submission ? submission.scoring_status : null,
+          submitted_at: submission ? submission.submitted_at : null,
+          submission_id: submission ? submission.id : null
+        };
+      });
       
       console.log('Upcoming tests:', upcoming);
-      console.log('Completed tests:', completed);
+      console.log('Completed tests with scores:', completed);
       
       setUpcomingTests(upcoming);
       setCompletedTests(completed);
@@ -57,40 +87,90 @@ const ApplicantDashboard = () => {
       setCompletedTests([]);
       
       // Show error message to user
-      alert('Unable to load your test invitations. Error: ' + (error.response?.data?.detail || error.message) + ' Please contact support if this issue persists.');
+      toast.error('Unable to load your test invitations. Error: ' + (error.response?.data?.detail || error.message) + ' Please contact support if this issue persists.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTakeTest = (test) => {
+  const canStartTest = (test, index) => {
+    // Check if there are any in-progress tests
+    const inProgressTests = upcomingTests.filter(t => t.status === 'in_progress');
+    
+    // If no tests in progress, can start any test
+    if (inProgressTests.length === 0) {
+      return { canStart: true, reason: '' };
+    }
+    
+    // If this test is already in progress, can continue
+    if (test.status === 'in_progress') {
+      return { canStart: true, reason: 'Continue test' };
+    }
+    
+    // If this is the first (oldest) test and not in progress, can start
+    if (index === 0) {
+      return { canStart: true, reason: 'Start oldest test first' };
+    }
+    
+    // Otherwise, cannot start
+    return { 
+      canStart: false, 
+      reason: 'Complete your oldest test first' 
+    };
+  };
+
+  const handleTakeTest = (test, index) => {
+    const { canStart, reason } = canStartTest(test, index);
+    
+    if (!canStart) {
+      toast.error(reason + '. Please complete your tests in order.');
+      return;
+    }
+    
     const token = test.token || test.invite_token;
     if (token) {
       // Navigate to test taking page with token
       navigate(`/take-test/${token}`);
     } else {
-      alert('Test token not available. Please contact administrator.');
+      toast.error('Test token not available. Please contact administrator.');
     }
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (test) => {
     const statusConfig = {
-      sent: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
+      sent: { color: 'bg-blue-100 text-blue-800', label: 'Ready', icon: Calendar },
       scheduled: { color: 'bg-blue-100 text-blue-800', label: 'Scheduled', icon: Calendar },
       in_progress: { color: 'bg-orange-100 text-orange-800', label: 'In Progress', icon: Clock },
       completed: { color: 'bg-green-100 text-green-800', label: 'Completed', icon: CheckCircle },
       expired: { color: 'bg-red-100 text-red-800', label: 'Expired', icon: AlertCircle }
     };
     
-    const config = statusConfig[status] || statusConfig.scheduled;
+    // Determine the appropriate label based on scheduling type
+    let label = statusConfig[test.status]?.label || 'Ready';
+    if (test.status === 'sent') {
+      if (test.no_schedule) {
+        label = 'Available';
+      } else if (test.admin_scheduled && test.scheduled_date) {
+        label = 'Scheduled';
+      } else {
+        label = 'Ready';
+      }
+    }
+    
+    const config = statusConfig[test.status] || statusConfig.sent;
     const Icon = config.icon;
     
     return (
       <Badge className={`${config.color} border-0 flex items-center space-x-1`}>
         <Icon className="h-3 w-3" />
-        <span>{config.label}</span>
+        <span>{label}</span>
       </Badge>
     );
+  };
+
+  const handleViewTestDetails = (test) => {
+    setSelectedTest(test);
+    setShowTestDetails(true);
   };
 
   return (
@@ -100,9 +180,7 @@ const ApplicantDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <div className="h-10 w-10 bg-gradient-to-r from-green-600 to-teal-600 rounded-lg flex items-center justify-center">
-                <User className="h-6 w-6 text-white" />
-              </div>
+              <BrandIcon className="h-10 w-14" />
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Applicant Dashboard</h1>
                 <p className="text-sm text-gray-600">Welcome back, {user?.full_name}</p>
@@ -124,7 +202,7 @@ const ApplicantDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -152,24 +230,6 @@ const ApplicantDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          
-          <Card className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Average Score</p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {completedTests.length > 0 
-                      ? Math.round(completedTests.reduce((acc, test) => acc + (test.score || 0), 0) / completedTests.length)
-                      : 0}%
-                  </p>
-                </div>
-                <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <User className="h-6 w-6 text-purple-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Upcoming Tests */}
@@ -186,40 +246,59 @@ const ApplicantDashboard = () => {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {upcomingTests.map((test) => (
-                  <Card key={test.id} className="glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
-                        {getStatusBadge(test.status)}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Calendar className="h-4 w-4" />
-                          <span>
-                            {test.scheduled_date 
-                              ? new Date(test.scheduled_date).toLocaleDateString()
-                              : 'Not scheduled'
-                            }
-                          </span>
+                {upcomingTests.map((test, index) => {
+                  const { canStart, reason } = canStartTest(test, index);
+                  return (
+                    <Card key={test.id} className={`glass-effect border-0 shadow-lg hover:shadow-xl transition-all duration-300 card-hover ${!canStart ? 'opacity-75' : ''}`}>
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center space-x-2">
+                            <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
+                            {index === 0 && upcomingTests.filter(t => t.status === 'in_progress').length > 0 && test.status !== 'in_progress' && (
+                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Next</span>
+                            )}
+                          </div>
+                          {getStatusBadge(test)}
                         </div>
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Clock className="h-4 w-4" />
-                          <span>{test.test?.duration_minutes || 90} minutes</span>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Calendar className="h-4 w-4" />
+                            <span>
+                              {test.scheduled_date 
+                                ? new Date(test.scheduled_date).toLocaleDateString()
+                                : test.no_schedule 
+                                  ? 'Available anytime'
+                                  : 'Schedule required'
+                              }
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Clock className="h-4 w-4" />
+                            <span>{test.test?.duration_minutes || 90} minutes</span>
+                          </div>
+                          {!canStart && (
+                            <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                              {reason}
+                            </div>
+                          )}
+                          <Button 
+                            className={`w-full mt-4 ${canStart 
+                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                            data-testid={`take-test-${test.id}`}
+                            onClick={() => handleTakeTest(test, index)}
+                            disabled={!canStart}
+                          >
+                            {test.status === 'in_progress' ? 'Continue Test' : 'Take Test'}
+                          </Button>
                         </div>
-                        <Button 
-                          className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-                          data-testid={`take-test-${test.id}`}
-                          onClick={() => handleTakeTest(test)}
-                        >
-                          Take Test
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -242,7 +321,7 @@ const ApplicantDashboard = () => {
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <CardTitle className="text-lg">{test.test_title || test.test?.title}</CardTitle>
-                        {getStatusBadge(test.status)}
+                        {getStatusBadge(test)}
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -250,30 +329,36 @@ const ApplicantDashboard = () => {
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                           <Calendar className="h-4 w-4" />
                           <span>
-                            Completed: {test.completed_date 
-                              ? new Date(test.completed_date).toLocaleDateString()
+                            Completed: {test.submitted_at 
+                              ? new Date(test.submitted_at).toLocaleDateString()
                               : 'N/A'
                             }
                           </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Score:</span>
-                          <div className="flex items-center space-x-2">
-                            <div className="h-2 w-20 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-green-500 to-blue-500 rounded-full"
-                                style={{ width: `${test.score || 0}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-medium">{test.score || 0}%</span>
+                        {test.scoring_status && test.scoring_status !== 'auto_only' && (
+                          <div className="flex items-center space-x-2 text-xs">
+                            <Badge 
+                              variant={
+                                test.scoring_status === 'needs_review' ? 'destructive' :
+                                test.scoring_status === 'partially_reviewed' ? 'default' :
+                                'outline'
+                              }
+                              className="text-xs"
+                            >
+                              {test.scoring_status === 'needs_review' ? 'Under Review' :
+                               test.scoring_status === 'partially_reviewed' ? 'Partial Review' :
+                               test.scoring_status === 'fully_reviewed' ? 'Fully Reviewed' :
+                               test.scoring_status}
+                            </Badge>
                           </div>
-                        </div>
+                        )}
                         <Button 
                           variant="outline" 
                           className="w-full mt-4"
                           data-testid={`view-results-${test.id}`}
+                          onClick={() => handleViewTestDetails(test)}
                         >
-                          View Results
+                          View Test Details
                         </Button>
                       </div>
                     </CardContent>
@@ -284,6 +369,128 @@ const ApplicantDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Test Details Dialog */}
+      <Dialog open={showTestDetails} onOpenChange={setShowTestDetails}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold flex items-center space-x-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              <span>Test Details</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedTest && (
+            <div className="space-y-6">
+              {/* Test Overview */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                  {selectedTest.test_title || selectedTest.test?.title}
+                </h3>
+                {selectedTest.test_description && (
+                  <p className="text-gray-600 mb-4">{selectedTest.test_description}</p>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Calendar className="h-4 w-4" />
+                    <span>
+                      Completed: {selectedTest.submitted_at 
+                        ? new Date(selectedTest.submitted_at).toLocaleDateString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Timer className="h-4 w-4" />
+                    <span>Duration: {selectedTest.test_duration_minutes || 90} minutes</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <Users className="h-4 w-4" />
+                    <span>Applicant: {selectedTest.applicant_name}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Status: Completed</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Test Information */}
+              <div className="space-y-4">
+                <h4 className="text-md font-semibold text-gray-900 flex items-center space-x-2">
+                  <FileText className="h-4 w-4" />
+                  <span>Test Information</span>
+                </h4>
+                
+                <div className="bg-white border rounded-lg p-4 space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Test ID:</span>
+                    <span className="text-sm text-gray-900 font-mono">{selectedTest.test_id}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Submission ID:</span>
+                    <span className="text-sm text-gray-900 font-mono">{selectedTest.id}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Started At:</span>
+                    <span className="text-sm text-gray-900">
+                      {selectedTest.started_at 
+                        ? new Date(selectedTest.started_at).toLocaleString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm font-medium text-gray-600">Submitted At:</span>
+                    <span className="text-sm text-gray-900">
+                      {selectedTest.submitted_at 
+                        ? new Date(selectedTest.submitted_at).toLocaleString()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium text-gray-600">Review Status:</span>
+                    <Badge 
+                      variant={
+                        selectedTest.scoring_status === 'needs_review' ? 'destructive' :
+                        selectedTest.scoring_status === 'partially_reviewed' ? 'default' :
+                        selectedTest.scoring_status === 'fully_reviewed' ? 'outline' :
+                        'secondary'
+                      }
+                      className="text-xs"
+                    >
+                      {selectedTest.scoring_status === 'needs_review' ? 'Under Review' :
+                       selectedTest.scoring_status === 'partially_reviewed' ? 'Partial Review' :
+                       selectedTest.scoring_status === 'fully_reviewed' ? 'Fully Reviewed' :
+                       selectedTest.scoring_status || 'Auto-scored'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {/* Note about scores */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h5 className="text-sm font-medium text-blue-900">Score Information</h5>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Test scores and detailed answers are not visible to applicants. 
+                      Your test has been submitted and is being reviewed by the assessment team.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

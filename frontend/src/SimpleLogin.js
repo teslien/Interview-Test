@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './App';
+import { toast } from 'sonner';
 
 const SimpleLogin = () => {
   const navigate = useNavigate();
@@ -26,11 +27,11 @@ const SimpleLogin = () => {
     e.preventDefault();
     setIsLoading(true);
     
-    alert('Login form submitted with: ' + loginData.email);
+    toast.info('Login form submitted with: ' + loginData.email);
     
     try {
       const userData = await login(loginData.email, loginData.password);
-      alert('Login response received: ' + JSON.stringify(userData));
+      toast.success('Login response received: ' + JSON.stringify(userData));
       if (userData.role === 'admin') {
         navigate('/admin');
       } else {
@@ -38,7 +39,7 @@ const SimpleLogin = () => {
       }
     } catch (error) {
       console.error('Login failed:', error);
-      alert('Login failed: ' + error.message);
+      toast.error('Login failed: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +134,7 @@ const SimpleLogin = () => {
             disabled={isLoading}
             onClick={(e) => {
               e.preventDefault();
-              alert('Button clicked!');
+              toast.info('Button clicked!');
               handleLogin(e);
             }}
             style={{
@@ -155,12 +156,12 @@ const SimpleLogin = () => {
           <button
             type="button"
             onClick={async () => {
-              alert('Direct test button clicked');
+              toast.info('Direct test button clicked');
               try {
                 const result = await login('admin@example.com', 'admin123');
-                alert('Direct login result: ' + JSON.stringify(result));
+                toast.success('Direct login result: ' + JSON.stringify(result));
               } catch (e) {
-                alert('Direct login error: ' + e.message);
+                toast.error('Direct login error: ' + e.message);
               }
             }}
             style={{

@@ -37,7 +37,7 @@ class InterviewPlatformAPITester:
             success = response.status_code == expected_status
             if success:
                 self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
+                print(f" Passed - Status: {response.status_code}")
                 try:
                     response_data = response.json()
                     return success, response_data
@@ -659,7 +659,7 @@ class InterviewPlatformAPITester:
             print(f"❌ Initial status not 'sent', got: {response.get('invite', {}).get('status')}")
             return False
             
-        print("   ✅ Initial status: sent")
+        print("    Initial status: sent")
         
         # Start the test (should change status to 'in_progress')
         success, response = self.run_test(
@@ -673,7 +673,7 @@ class InterviewPlatformAPITester:
             print("❌ Could not start test for status change")
             return False
             
-        print("   ✅ Test started, status should be 'in_progress'")
+        print("    Test started, status should be 'in_progress'")
         
         # Check status after starting (should be 'in_progress')
         success, response = self.run_test(
@@ -684,7 +684,7 @@ class InterviewPlatformAPITester:
         )
         
         if success and response.get('invite', {}).get('status') == 'in_progress':
-            print("   ✅ Status changed to 'in_progress'")
+            print("    Status changed to 'in_progress'")
             return True
         else:
             print(f"❌ Status not 'in_progress', got: {response.get('invite', {}).get('status')}")
@@ -791,7 +791,7 @@ class InterviewPlatformAPITester:
         )
         
         if success and response.get('score') == 100.0:
-            print(f"   ✅ Score calculation correct: {response.get('score')}%")
+            print(f"    Score calculation correct: {response.get('score')}%")
             return True
         else:
             print(f"❌ Expected 100%, got: {response.get('score')}%")
