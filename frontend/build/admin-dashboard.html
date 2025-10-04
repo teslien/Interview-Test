@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Interview Test Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            color: #1a202c;
+        }
+        
+        .header p {
+            color: #718096;
+            margin-top: 4px;
+        }
+        
+        .logout-btn {
+            padding: 8px 16px;
+            background: #f56565;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card h3 {
+            font-size: 16px;
+            color: #718096;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1a202c;
+        }
+        
+        .actions-section {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            margin-bottom: 40px;
+        }
+        
+        .actions-section h2 {
+            font-size: 24px;
+            color: #1a202c;
+            margin-bottom: 24px;
+        }
+        
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        
+        .action-btn {
+            padding: 20px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: white;
+            text-align: center;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .create-test {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .send-invite {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+        
+        .view-results {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        }
+        
+        .monitor-tests {
+            background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+        }
+        
+        .test-list {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        
+        .test-item {
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+        
+        .test-item h3 {
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+        
+        .test-item p {
+            color: #718096;
+            font-size: 14px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 600px;
+            margin: 50px auto;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .close-btn {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+            color: #718096;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #2d3748;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .question-item {
+            background: #f7fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .add-question-btn {
+            background: #48bb78;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <h1>Admin Dashboard</h1>
+                <p>Welcome back, <span id="userName">Admin</span></p>
+            </div>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Tests</h3>
+                <div class="number" id="totalTests">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Invites Sent</h3>
+                <div class="number" id="totalInvites">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Completed Tests</h3>
+                <div class="number" id="completedTests">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>In Progress</h3>
+                <div class="number" id="inProgressTests">0</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="actions-section">
+            <h2>Quick Actions</h2>
+            <div class="actions-grid">
+                <button class="action-btn create-test" onclick="openCreateTestModal()">
+                    📝 Create Test
+                </button>
+                <button class="action-btn send-invite" onclick="openSendInviteModal()">
+                    📧 Send Invite
+                </button>
+                <button class="action-btn view-results" onclick="viewResults()">
+                    📊 View Results
+                </button>
+                <button class="action-btn monitor-tests" onclick="monitorTests()">
+                    📹 Monitor Tests
+                </button>
+            </div>
+        </div>
+
+        <!-- Test List -->
+        <div class="test-list">
+            <h2>Recent Tests</h2>
+            <div id="testsList">
+                <!-- Tests will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Test Modal -->
+    <div id="createTestModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('createTestModal')">&times;</span>
+            <h2>Create New Test</h2>
+            <form id="createTestForm">
+                <div class="form-group">
+                    <label for="testTitle">Test Title</label>
+                    <input type="text" id="testTitle" required>
+                </div>
+                <div class="form-group">
+                    <label for="testDescription">Description</label>
+                    <textarea id="testDescription" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="testDuration">Duration (minutes)</label>
+                    <input type="number" id="testDuration" value="60" min="1" required>
+                </div>
+                
+                <h3>Questions</h3>
+                <div id="questionsList"></div>
+                
+                <div class="form-group">
+                    <label for="questionType">Question Type</label>
+                    <select id="questionType" onchange="updateQuestionForm()">
+                        <option value="multiple_choice">Multiple Choice</option>
+                        <option value="essay">Essay</option>
+                        <option value="coding">Coding</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="questionText">Question</label>
+                    <textarea id="questionText" placeholder="Enter your question here"></textarea>
+                </div>
+                
+                <div id="multipleChoiceOptions" style="display: block;">
+                    <div class="form-group">
+                        <label>Options</label>
+                        <input type="text" id="option1" placeholder="Option 1">
+                        <input type="text" id="option2" placeholder="Option 2">
+                        <input type="text" id="option3" placeholder="Option 3">
+                        <input type="text" id="option4" placeholder="Option 4">
+                    </div>
+                    <div class="form-group">
+                        <label for="correctAnswer">Correct Answer</label>
+                        <select id="correctAnswer">
+                            <option value="">Select correct answer</option>
+                            <option value="1">Option 1</option>
+                            <option value="2">Option 2</option>
+                            <option value="3">Option 3</option>
+                            <option value="4">Option 4</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div id="codingOptions" style="display: none;">
+                    <div class="form-group">
+                        <label for="expectedLanguage">Programming Language</label>
+                        <select id="expectedLanguage">
+                            <option value="javascript">JavaScript</option>
+                            <option value="python">Python</option>
+                            <option value="java">Java</option>
+                            <option value="cpp">C++</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="questionPoints">Points</label>
+                    <input type="number" id="questionPoints" value="1" min="1">
+                </div>
+                
+                <button type="button" class="add-question-btn" onclick="addQuestion()">Add Question</button>
+                
+                <br><br>
+                <button type="submit" class="submit-btn">Create Test</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Send Invite Modal -->
+    <div id="sendInviteModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('sendInviteModal')">&times;</span>
+            <h2>Send Test Invite</h2>
+            <form id="sendInviteForm">
+                <div class="form-group">
+                    <label for="inviteTest">Select Test</label>
+                    <select id="inviteTest" required>
+                        <option value="">Select a test</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="applicantName">Applicant Name</label>
+                    <input type="text" id="applicantName" required>
+                </div>
+                <div class="form-group">
+                    <label for="applicantEmail">Applicant Email</label>
+                    <input type="email" id="applicantEmail" required>
+                </div>
+                <button type="submit" class="submit-btn">Send Invite</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://prescreen-app.preview.emergentagent.com/api';
+        let authToken = localStorage.getItem('token');
+        let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        let currentQuestions = [];
+
+        // Set test data for now
+        authToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkBleGFtcGxlLmNvbSIsImV4cCI6MTc1ODk3NTY2Mn0.I-rGzQbascMelJ4DNrmYinnaJl-M0qVuW0OW-_iUp_0';
+        currentUser = {
+            id: 'admin-id',
+            email: 'admin@example.com',
+            full_name: 'Admin User',
+            role: 'admin'
+        };
+
+        // Set user name
+        document.getElementById('userName').textContent = currentUser.full_name || 'Admin';
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadDashboardData();
+        });
+
+        async function apiCall(endpoint, options = {}) {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`,
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API call failed: ${response.statusText}`);
+            }
+
+            return response.json();
+        }
+
+        async function loadDashboardData() {
+            try {
+                // Load stats
+                const [tests, invites, results] = await Promise.all([
+                    apiCall('/tests'),
+                    apiCall('/invites'),
+                    apiCall('/results')
+                ]);
+
+                document.getElementById('totalTests').textContent = tests.length;
+                document.getElementById('totalInvites').textContent = invites.length;
+                document.getElementById('completedTests').textContent = invites.filter(i => i.status === 'completed').length;
+                document.getElementById('inProgressTests').textContent = invites.filter(i => i.status === 'in_progress').length;
+
+                // Load tests list
+                loadTestsList(tests);
+                loadTestsSelect(tests);
+
+            } catch (error) {
+                console.error('Failed to load dashboard data:', error);
+            }
+        }
+
+        function loadTestsList(tests) {
+            const testsContainer = document.getElementById('testsList');
+            if (tests.length === 0) {
+                testsContainer.innerHTML = '<p>No tests created yet. Create your first test!</p>';
+                return;
+            }
+
+            testsContainer.innerHTML = tests.map(test => `
+                <div class="test-item">
+                    <h3>${test.title}</h3>
+                    <p>${test.description}</p>
+                    <p><strong>Questions:</strong> ${test.questions.length} | <strong>Duration:</strong> ${test.duration_minutes} minutes</p>
+                    <p><small>Created: ${new Date(test.created_at).toLocaleDateString()}</small></p>
+                </div>
+            `).join('');
+        }
+
+        function loadTestsSelect(tests) {
+            const select = document.getElementById('inviteTest');
+            select.innerHTML = '<option value="">Select a test</option>' +
+                tests.map(test => `<option value="${test.id}">${test.title}</option>`).join('');
+        }
+
+        function openCreateTestModal() {
+            document.getElementById('createTestModal').style.display = 'block';
+        }
+
+        function openSendInviteModal() {
+            document.getElementById('sendInviteModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function updateQuestionForm() {
+            const type = document.getElementById('questionType').value;
+            const mcOptions = document.getElementById('multipleChoiceOptions');
+            const codingOptions = document.getElementById('codingOptions');
+
+            if (type === 'multiple_choice') {
+                mcOptions.style.display = 'block';
+                codingOptions.style.display = 'none';
+            } else if (type === 'coding') {
+                mcOptions.style.display = 'none';
+                codingOptions.style.display = 'block';
+            } else {
+                mcOptions.style.display = 'none';
+                codingOptions.style.display = 'none';
+            }
+        }
+
+        function addQuestion() {
+            const type = document.getElementById('questionType').value;
+            const questionText = document.getElementById('questionText').value;
+            const points = parseInt(document.getElementById('questionPoints').value) || 1;
+
+            if (!questionText.trim()) {
+                alert('Please enter a question');
+                return;
+            }
+
+            const question = {
+                id: Date.now().toString(),
+                type: type,
+                question: questionText,
+                points: points
+            };
+
+            if (type === 'multiple_choice') {
+                const options = [
+                    document.getElementById('option1').value,
+                    document.getElementById('option2').value,
+                    document.getElementById('option3').value,
+                    document.getElementById('option4').value
+                ].filter(opt => opt.trim());
+
+                const correctAnswer = document.getElementById('correctAnswer').value;
+                if (options.length < 2) {
+                    alert('Please provide at least 2 options');
+                    return;
+                }
+                if (!correctAnswer) {
+                    alert('Please select the correct answer');
+                    return;
+                }
+
+                question.options = options;
+                question.correct_answer = options[parseInt(correctAnswer) - 1];
+            }
+
+            if (type === 'coding') {
+                question.expected_language = document.getElementById('expectedLanguage').value;
+            }
+
+            currentQuestions.push(question);
+            updateQuestionsList();
+            clearQuestionForm();
+        }
+
+        function updateQuestionsList() {
+            const container = document.getElementById('questionsList');
+            container.innerHTML = currentQuestions.map((q, index) => `
+                <div class="question-item">
+                    <strong>Q${index + 1}: ${q.type.replace('_', ' ').toUpperCase()}</strong>
+                    <p>${q.question}</p>
+                    <small>Points: ${q.points}</small>
+                    <button type="button" onclick="removeQuestion(${index})" style="float: right; color: red; background: none; border: none; cursor: pointer;">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function removeQuestion(index) {
+            currentQuestions.splice(index, 1);
+            updateQuestionsList();
+        }
+
+        function clearQuestionForm() {
+            document.getElementById('questionText').value = '';
+            document.getElementById('option1').value = '';
+            document.getElementById('option2').value = '';
+            document.getElementById('option3').value = '';
+            document.getElementById('option4').value = '';
+            document.getElementById('correctAnswer').value = '';
+            document.getElementById('questionPoints').value = '1';
+        }
+
+        // Form submission handlers
+        document.getElementById('createTestForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (currentQuestions.length === 0) {
+                alert('Please add at least one question');
+                return;
+            }
+
+            const testData = {
+                title: document.getElementById('testTitle').value,
+                description: document.getElementById('testDescription').value,
+                duration_minutes: parseInt(document.getElementById('testDuration').value),
+                questions: currentQuestions
+            };
+
+            try {
+                await apiCall('/tests', {
+                    method: 'POST',
+                    body: JSON.stringify(testData)
+                });
+
+                alert('Test created successfully!');
+                closeModal('createTestModal');
+                currentQuestions = [];
+                updateQuestionsList();
+                document.getElementById('createTestForm').reset();
+                loadDashboardData();
+            } catch (error) {
+                alert('Failed to create test: ' + error.message);
+            }
+        });
+
+        document.getElementById('sendInviteForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const inviteData = {
+                test_id: document.getElementById('inviteTest').value,
+                applicant_name: document.getElementById('applicantName').value,
+                applicant_email: document.getElementById('applicantEmail').value
+            };
+
+            try {
+                await apiCall('/invites', {
+                    method: 'POST',
+                    body: JSON.stringify(inviteData)
+                });
+
+                alert('Invite sent successfully!');
+                closeModal('sendInviteModal');
+                document.getElementById('sendInviteForm').reset();
+                loadDashboardData();
+            } catch (error) {
+                alert('Failed to send invite: ' + error.message);
+            }
+        });
+
+        function viewResults() {
+            alert('Results functionality will be implemented in the next phase!');
+        }
+
+        function monitorTests() {
+            alert('Live monitoring functionality will be implemented in the next phase!');
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/working-login.html';
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const modals = document.getElementsByClassName('modal');
+            for (let modal of modals) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
